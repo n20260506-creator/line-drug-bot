@@ -1,0 +1,117 @@
+import os
+import io
+from flask import Flask, request, abort
+from PIL import Image
+
+# 引入 LINE SDK
+from linebot.v3 import WebhookHandler
+from linebot.v3.exceptions import InvalidSignatureError
+from linebot.v3.messaging import (
+    Configuration,
+    ApiClient,
+    MessagingApi,
+    MessagingApiBlob,
+    ReplyMessageRequest,
+    TextMessage
+)
+from linebot.v3.webhooks import MessageEvent, ImageMessageContent
+
+# 修正：引入 Google 2026 最新官方 GenAI 套件
+from google import genai
+from google.genai import types
+
+app = Flask(__name__)
+
+# === [請務必在這裡直接填入你們的真實金鑰，確保 100% 讀取得到] ===
+LINE_CHANNEL_ACCESS_TOKEN = 'PbHdoxTXP6wN2jhvPJuC0IhOlsiVoUuE2uMM+y+VPFOxtUgHbPBi3oet08YXEiPjx2jCQ/NwXsrVDP7xC22bbPOuIRWlRPMLRjBxOL9LI9aNbyjtrgr/YprIxUFbXftICvM5N3Kw16rNt1ai7aIvZQdB04t89/1O/w1cDnyilFU='
+LINE_CHANNEL_SECRET = '29f2d32227d1a5ee91213ad668dc9d82'
+GOOGLE_API_KEY = 'AIzaSyBco4ZXpzBOH-ADvHgxDxkVKDqx-RyO8Ek'
+# ==========================================================
+
+# 初始化 LINE SDK
+configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
+handler = WebhookHandler(LINE_CHANNEL_SECRET)
+
+# 初始化 Google GenAI Client (將 API Key 直接帶入)
+ai_client = genai.Client(api_key=GOOGLE_API_KEY)
+
+# 系統指令：嚴格規範格式
+SYSTEM_INSTRUCTION = """
+你是一位專業、嚴謹的醫療院所藥劑師。
+請仔細分析使用者上傳的藥袋照片，並「嚴格」依照以下指定的格式回傳資訊。
+
+規定事項：
+1. 必須嚴格遵守下方提供的格式標籤，不得自行修改標籤名稱。
+2. 如果藥袋上完全找不到該項資訊，請填寫「未明確標示」。
+3. 嚴禁包含任何額外的解釋、問候語或格式以外的文字。
+"""
+
+PROMPT_TEMPLATE = """
+📋 【藥袋辨識結果】
+━━━━━━━━━━━━━━━━━━
+【藥品名稱】：
+【適應症/用途】：
+【用法用量】：
+【副作用】：
+【注意事項】：
+━━━━━━━━━━━━━━━━━━
+💡 提示：本系統辨識結果僅供參考，用藥前請務必再次核對藥袋，並遵照醫囑。
+"""
+
+@app.route("/callback", methods=['POST'])
+def callback():
+    signature = request.headers.get('X-Line-Signature', '')
+    body = request.get_data(as_text=True)
+    try:
+        handler.handle(body, signature)
+    except InvalidSignatureError:
+        abort(400)
+    return 'OK'
+
+@handler.add(MessageEvent, message=ImageMessageContent)
+def handle_image_message(event):
+    with ApiClient(configuration) as api_client:
+        line_bot_blob_api = MessagingApiBlob(api_client)
+        line_bot_api = MessagingApi(api_client)
+        
+        try:
+            print("\n[系統] ➔ 收到來自 LINE 的圖片訊息！開始處理...")
+            message_id = event.message.id
+            
+            # 1. 下載圖片
+            image_content = line_bot_blob_api.get_message_content(message_id)
+            print("[系統] ➔ 成功下載圖片。")
+            
+            # 2. 轉換圖片格式
+            img = Image.open(io.BytesIO(image_content))
+            print("[系統] ➔ 圖片轉換成功，正在傳送給 Gemini AI 辨識...")
+            
+            # 3. 使用最新版套件呼叫 Gemini-1.5-Flash
+            response = ai_client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=[img, f"請填寫以下這份表單，將藥袋中的資訊填入對應的括號中：\n{PROMPT_TEMPLATE}"],
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_INSTRUCTION
+                )
+            )
+            result_text = response.text.strip()
+            print("[系統] ➔ Gemini 辨識完成！準備回傳給 LINE。")
+            
+        except Exception as e:
+            print(f"\n❌ [錯誤原因] ➔ {e}\n")
+            result_text = "❌ 辨識失敗。可能原因：照片過於模糊、反光、或是 Google AI 連線超時。請重新拍攝並再試一次！"
+            
+        # 4. 回傳給使用者
+        try:
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=result_text)]
+                )
+            )
+            print("[系統] ➔ 成功將結果送回使用者的 LINE！")
+        except Exception as reply_error:
+            print(f"❌ [回傳失敗] ➔ {reply_error}")
+
+if __name__ == "__main__":
+    app.run(port=5000, debug=True)
