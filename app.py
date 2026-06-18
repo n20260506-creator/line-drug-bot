@@ -22,10 +22,11 @@ from google.genai import types
 
 app = Flask(__name__)
 
-# === [請務必在這裡直接填入你們的真實金鑰，確保 100% 讀取得到] ===
-LINE_CHANNEL_ACCESS_TOKEN = 'PbHdoxTXP6wN2jhvPJuC0IhOlsiVoUuE2uMM+y+VPFOxtUgHbPBi3oet08YXEiPjx2jCQ/NwXsrVDP7xC22bbPOuIRWlRPMLRjBxOL9LI9aNbyjtrgr/YprIxUFbXftICvM5N3Kw16rNt1ai7aIvZQdB04t89/1O/w1cDnyilFU='
-LINE_CHANNEL_SECRET = '29f2d32227d1a5ee91213ad668dc9d82'
-GOOGLE_API_KEY = 'AIzaSyBco4ZXpzBOH-ADvHgxDxkVKDqx-RyO8Ek'
+
+# 💡 正確寫法（告訴程式去讀取 Render 後台填寫的環境變數）
+LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
+LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
+GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
 # ==========================================================
 
 # 初始化 LINE SDK
