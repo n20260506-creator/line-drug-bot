@@ -75,19 +75,32 @@ def handle_image_message(event):
         line_bot_blob_api = MessagingApiBlob(api_client)
         line_bot_api = MessagingApi(api_client)
         
-        try:
+       try:
             print("\n[系統] ➔ 收到來自 LINE 的圖片訊息！開始處理...")
             message_id = event.message.id
             
-            # 1. 下載圖片
-            image_content = line_bot_blob_api.get_message_content(message_id)
+            # 1. 下載圖片（新版正確寫法：使用讀取或迭代器獲取 binary 資料）
+            message_content = line_bot_blob_api.get_message_content(message_id)
+            
+            # 💡 【關鍵修改】用 BytesIO 把圖片內容完整寫入記憶體
+            image_bytes = io.BytesIO()
+            if hasattr(message_content, 'iter_content'):
+                for chunk in message_content.iter_content():
+                    image_bytes.write(chunk)
+            else:
+                # 備用方案：如果不是串流，直接讀取整個 body
+                image_bytes.write(message_content if isinstance(message_content, bytes) else message_content.read())
+            
+            # ✨ 確保將讀取位置歸零，雲端環境（Linux）非常需要這行！
+            image_bytes.seek(0)
             print("[系統] ➔ 成功下載圖片。")
             
             # 2. 轉換圖片格式
-            img = Image.open(io.BytesIO(image_content))
+            img = Image.open(image_bytes)
             print("[系統] ➔ 圖片轉換成功，正在傳送給 Gemini AI 辨識...")
             
-            # 3. 使用最新版套件呼叫 Gemini-1.5-Flash
+            # 3. 使用最新版套件呼叫 Gemini
+            # 💡 提示：如果 gemini-2.5-flash 在你們的環境噴 404，可以改回 'models/gemini-1.5-flash'
             response = ai_client.models.generate_content(
                 model='gemini-2.5-flash',
                 contents=[img, f"請填寫以下這份表單，將藥袋中的資訊填入對應的括號中：\n{PROMPT_TEMPLATE}"],
