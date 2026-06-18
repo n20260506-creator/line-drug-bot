@@ -127,5 +127,8 @@ def handle_image_message(event):
         except Exception as reply_error:
             print(f"❌ [回傳失敗] ➔ {reply_error}")
 
-if __name__ == "__main__":
-    app.run(port=5000, debug=True)
+if __name__ == '__main__':
+    # 讓程式自動去讀取環境變數中的 PORT，如果讀不到（例如在自己電腦跑）就預設用 5000
+    port = int(os.environ.get("PORT", 5000))
+    # 必須將 host 改為 '0.0.0.0'，雲端伺服器才連得進來
+    app.run(host='0.0.0.0', port=port)
