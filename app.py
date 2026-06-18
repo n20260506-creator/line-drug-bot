@@ -75,7 +75,7 @@ def handle_image_message(event):
         line_bot_blob_api = MessagingApiBlob(api_client)
         line_bot_api = MessagingApi(api_client)
         
-       try:
+        try:
             print("\n[系統] ➔ 收到來自 LINE 的圖片訊息！開始處理...")
             message_id = event.message.id
             
