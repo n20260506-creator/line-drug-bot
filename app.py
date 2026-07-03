@@ -1,5 +1,7 @@
 import os
 import io
+# --- 新增：紀錄語言的變數 ---
+user_language_prefs = {} 
 from flask import Flask, request, abort
 from PIL import Image
 
@@ -32,7 +34,35 @@ GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
 # 初始化 LINE SDK
 configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
+from linebot.v3.webhooks import FollowEvent, PostbackEvent
+from linebot.v3.messaging import TemplateMessage, ButtonsTemplate, PostbackAction
 
+# 1. 用戶加入時跳出選單
+@handler.add(FollowEvent)
+def handle_follow(event):
+    with ApiClient(configuration) as api_client:
+        MessagingApi(api_client).reply_message(ReplyMessageRequest(
+            reply_token=event.reply_token,
+            messages=[TemplateMessage(alt_text="請選擇語言", template=ButtonsTemplate(
+                title="Language Selection", text="請選擇藥物辨識語言：",
+                actions=[
+                    PostbackAction(label="繁體中文", data="lang=zh"),
+                    PostbackAction(label="English", data="lang=en"),
+                    PostbackAction(label="Bahasa Indonesia", data="lang=id")
+                ]
+            ))]
+        ))
+
+# 2. 紀錄用戶點擊的結果
+@handler.add(PostbackEvent)
+def handle_postback(event):
+    if event.postback.data.startswith("lang="):
+        user_language_prefs[event.source.user_id] = event.postback.data.split("=")[1]
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).reply_message(ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(text="語言已設定 / Language set.")]
+            ))
 # 初始化 Google GenAI Client (將 API Key 直接帶入)
 ai_client = genai.Client(api_key=GOOGLE_API_KEY)
 
@@ -101,9 +131,14 @@ def handle_image_message(event):
             
             # 3. 使用最新版套件呼叫 Gemini
             # 💡 提示：如果 gemini-2.5-flash 在你們的環境噴 404，可以改回 'models/gemini-1.5-flash'
+          # 3. 使用最新版套件呼叫 Gemini
+            # 【修改處：加入語言偵測邏輯】
+            user_lang = user_language_prefs.get(event.source.user_id, "zh")
+            lang_text = {"zh": "繁體中文", "en": "英文", "id": "印尼語"}.get(user_lang, "繁體中文")
+            
             response = ai_client.models.generate_content(
                 model='gemini-2.5-flash',
-                contents=[img, f"請填寫以下這份表單，將藥袋中的資訊填入對應的括號中：\n{PROMPT_TEMPLATE}"],
+                contents=[img, f"請使用「{lang_text}」語言，填寫以下表單，將藥袋中的資訊填入對應的括號中：\n{PROMPT_TEMPLATE}"],
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_INSTRUCTION
                 )
