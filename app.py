@@ -1,13 +1,5 @@
 import os
 import io
-# 用來暫存使用者的語言偏好 (重新啟動會消失，適合測試，正式環境建議存資料庫)
-user_language_prefs = {} 
-
-LANGUAGE_MAP = {
-    "zh": "繁體中文",
-    "en": "English",
-    "id": "Bahasa Indonesia"
-}
 from flask import Flask, request, abort
 from PIL import Image
 
@@ -27,7 +19,13 @@ from linebot.v3.webhooks import MessageEvent, ImageMessageContent
 # 修正：引入 Google 2026 最新官方 GenAI 套件
 from google import genai
 from google.genai import types
-
+# --- 語言設定功能 ---
+user_language_prefs = {} 
+LANGUAGE_MAP = {
+    "zh": "繁體中文",
+    "en": "English",
+    "id": "Bahasa Indonesia"
+}
 app = Flask(__name__)
 
 
