@@ -1,5 +1,13 @@
 import os
 import io
+# 用來暫存使用者的語言偏好 (重新啟動會消失，適合測試，正式環境建議存資料庫)
+user_language_prefs = {} 
+
+LANGUAGE_MAP = {
+    "zh": "繁體中文",
+    "en": "English",
+    "id": "Bahasa Indonesia"
+}
 from flask import Flask, request, abort
 from PIL import Image
 
@@ -32,6 +40,88 @@ GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
 # 初始化 LINE SDK
 configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
+from linebot.v3.webhooks import FollowEvent, PostbackEvent
+from linebot.v3.messaging import TemplateMessage, ButtonsTemplate, PostbackAction
+
+@handler.add(FollowEvent)
+def handle_follow(event):
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        line_bot_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TemplateMessage(
+                    alt_text="請選擇您的語言",
+                    template=ButtonsTemplate(
+                        title="請選擇語言 / Please select language",
+                        text="請選擇藥物資訊的顯示語言：",
+                        actions=[
+                            PostbackAction(label="繁體中文", data="lang=zh"),
+                            PostbackAction(label="English", data="lang=en"),
+                            PostbackAction(label="Bahasa Indonesia", data="lang=id")
+                        ]
+                    )
+                )]
+            )
+        )
+
+@handler.add(PostbackEvent)
+def handle_postback(event):
+    if event.postback.data.startswith("lang="):
+        lang_code = event.postback.data.split("=")[1]
+        user_id = event.source.user_id
+        user_language_prefs[user_id] = lang_code
+        
+        reply_text = f"語言已設定為：{LANGUAGE_MAP.get(lang_code)}"
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=reply_text)]
+                )
+            )
+from linebot.v3.webhooks import FollowEvent, PostbackEvent
+from linebot.v3.messaging import TemplateMessage, ButtonsTemplate, PostbackAction
+
+@handler.add(FollowEvent)
+def handle_follow(event):
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        line_bot_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TemplateMessage(
+                    alt_text="請選擇您的語言",
+                    template=ButtonsTemplate(
+                        title="請選擇語言 / Please select language",
+                        text="請選擇藥物資訊的顯示語言：",
+                        actions=[
+                            PostbackAction(label="繁體中文", data="lang=zh"),
+                            PostbackAction(label="English", data="lang=en"),
+                            PostbackAction(label="Bahasa Indonesia", data="lang=id")
+                        ]
+                    )
+                )]
+            )
+        )
+
+@handler.add(PostbackEvent)
+def handle_postback(event):
+    if event.postback.data.startswith("lang="):
+        lang_code = event.postback.data.split("=")[1]
+        user_id = event.source.user_id
+        user_language_prefs[user_id] = lang_code
+        
+        reply_text = f"語言已設定為：{LANGUAGE_MAP.get(lang_code)}"
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=reply_text)]
+                )
+            )
 
 # 初始化 Google GenAI Client (將 API Key 直接帶入)
 ai_client = genai.Client(api_key=GOOGLE_API_KEY)
@@ -101,13 +191,21 @@ def handle_image_message(event):
             
             # 3. 使用最新版套件呼叫 Gemini
             # 💡 提示：如果 gemini-2.5-flash 在你們的環境噴 404，可以改回 'models/gemini-1.5-flash'
+        # --- 修改的部分開始 ---
+            user_id = event.source.user_id
+            lang = user_language_prefs.get(user_id, "zh")
+            lang_instruction = f"請使用「{LANGUAGE_MAP[lang]}」語言來填寫以下表單。"
+            prompt_content = f"{lang_instruction}\n\n請填寫以下這份表單，將藥袋中的資訊填入對應的括號中：\n{PROMPT_TEMPLATE}"
+            
+            # 3. 使用最新版套件呼叫 Gemini
             response = ai_client.models.generate_content(
                 model='gemini-2.5-flash',
-                contents=[img, f"請填寫以下這份表單，將藥袋中的資訊填入對應的括號中：\n{PROMPT_TEMPLATE}"],
+                contents=[img, prompt_content],
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_INSTRUCTION
                 )
             )
+            # --- 修改的部分結束 ---
             result_text = response.text.strip()
             print("[系統] ➔ Gemini 辨識完成！準備回傳給 LINE。")
             
