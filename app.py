@@ -14,11 +14,13 @@ from linebot.v3.messaging import (
     ReplyMessageRequest,
     TextMessage
 )
-from linebot.v3.webhooks import MessageEvent, ImageMessageContent
+from linebot.v3.webhooks import MessageEvent, ImageMessageContent, FollowEvent, PostbackEvent
+from linebot.v3.messaging import TemplateMessage, ButtonsTemplate, PostbackAction
 
-# 修正：引入 Google 2026 最新官方 GenAI 套件
+# 引入 Google 2026 最新官方 GenAI 套件
 from google import genai
 from google.genai import types
+
 # --- 語言設定功能 ---
 user_language_prefs = {} 
 LANGUAGE_MAP = {
@@ -26,116 +28,31 @@ LANGUAGE_MAP = {
     "en": "English",
     "id": "Bahasa Indonesia"
 }
+
 app = Flask(__name__)
 
-
-# 💡 正確寫法（告訴程式去讀取 Render 後台填寫的環境變數）
+# 讀取環境變數
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
-# ==========================================================
 
 # 初始化 LINE SDK
 configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
-from linebot.v3.webhooks import FollowEvent, PostbackEvent
-from linebot.v3.messaging import TemplateMessage, ButtonsTemplate, PostbackAction
 
-@handler.add(FollowEvent)
-def handle_follow(event):
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-        line_bot_api.reply_message(
-            ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[TemplateMessage(
-                    alt_text="請選擇您的語言",
-                    template=ButtonsTemplate(
-                        title="請選擇語言 / Please select language",
-                        text="請選擇藥物資訊的顯示語言：",
-                        actions=[
-                            PostbackAction(label="繁體中文", data="lang=zh"),
-                            PostbackAction(label="English", data="lang=en"),
-                            PostbackAction(label="Bahasa Indonesia", data="lang=id")
-                        ]
-                    )
-                )]
-            )
-        )
-
-@handler.add(PostbackEvent)
-def handle_postback(event):
-    if event.postback.data.startswith("lang="):
-        lang_code = event.postback.data.split("=")[1]
-        user_id = event.source.user_id
-        user_language_prefs[user_id] = lang_code
-        
-        reply_text = f"語言已設定為：{LANGUAGE_MAP.get(lang_code)}"
-        with ApiClient(configuration) as api_client:
-            line_bot_api = MessagingApi(api_client)
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=reply_text)]
-                )
-            )
-from linebot.v3.webhooks import FollowEvent, PostbackEvent
-from linebot.v3.messaging import TemplateMessage, ButtonsTemplate, PostbackAction
-
-@handler.add(FollowEvent)
-def handle_follow(event):
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-        line_bot_api.reply_message(
-            ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[TemplateMessage(
-                    alt_text="請選擇您的語言",
-                    template=ButtonsTemplate(
-                        title="請選擇語言 / Please select language",
-                        text="請選擇藥物資訊的顯示語言：",
-                        actions=[
-                            PostbackAction(label="繁體中文", data="lang=zh"),
-                            PostbackAction(label="English", data="lang=en"),
-                            PostbackAction(label="Bahasa Indonesia", data="lang=id")
-                        ]
-                    )
-                )]
-            )
-        )
-
-@handler.add(PostbackEvent)
-def handle_postback(event):
-    if event.postback.data.startswith("lang="):
-        lang_code = event.postback.data.split("=")[1]
-        user_id = event.source.user_id
-        user_language_prefs[user_id] = lang_code
-        
-        reply_text = f"語言已設定為：{LANGUAGE_MAP.get(lang_code)}"
-        with ApiClient(configuration) as api_client:
-            line_bot_api = MessagingApi(api_client)
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=reply_text)]
-                )
-            )
-
-# 初始化 Google GenAI Client (將 API Key 直接帶入)
+# 初始化 Google GenAI Client
 ai_client = genai.Client(api_key=GOOGLE_API_KEY)
 
-# 系統指令：嚴格規範格式
+# ==================== [核心升級：AI 系統指令] ====================
+# 調整系統指令，讓 Gemini 具備「自動分類」與「藥丸識別」的能力
 SYSTEM_INSTRUCTION = """
 你是一位專業、嚴謹的醫療院所藥劑師。
-請仔細分析使用者上傳的藥袋照片，並「嚴格」依照以下指定的格式回傳資訊。
+請仔細分析使用者上傳的照片，照片可能是「藥袋」或「單顆/多顆藥丸（裸藥、排裝藥、罐裝藥）」。
 
-規定事項：
-1. 必須嚴格遵守下方提供的格式標籤，不得自行修改標籤名稱。
-2. 如果藥袋上完全找不到該項資訊，請填寫「未明確標示」。
-3. 嚴禁包含任何額外的解釋、問候語或格式以外的文字。
-"""
+請根據照片類型，嚴格依照以下規定的格式回傳資訊：
 
-PROMPT_TEMPLATE = """
+【情況 A：如果是藥袋照片】
+必須嚴格遵守以下格式標籤：
 📋 【藥袋辨識結果】
 ━━━━━━━━━━━━━━━━━━
 【藥品名稱】：
@@ -145,6 +62,23 @@ PROMPT_TEMPLATE = """
 【注意事項】：
 ━━━━━━━━━━━━━━━━━━
 💡 提示：本系統辨識結果僅供參考，用藥前請務必再次核對藥袋，並遵照醫囑。
+
+【情況 B：如果是藥丸/藥片/膠囊照片】
+必須嚴格識別外觀特徵（外觀、顏色、形狀、刻字/標記），並尋找可能的藥品匹配。遵守以下格式標籤：
+💊 【藥丸外觀辨識結果】
+━━━━━━━━━━━━━━━━━━
+【可能藥品名稱】：(如果無法百分之百確定，可列出1-3個最可能的藥名並註明機率)
+【外觀特徵描述】：(例如：白色圓形錠劑、一面刻有ABC、另一面有十字一字刻痕)
+【主要適應症/用途】：
+【一般常見用法】：
+【服用注意事項與副作用】：
+━━━━━━━━━━━━━━━━━━
+💡 警語：單憑外觀辨識藥丸具備高度風險。本結果僅供參考，請勿盲目服用未知藥丸！若無法確認，請諮詢實體藥局或醫師。
+
+通用規定事項：
+1. 必須根據照片種類，精確選擇對應的格式（藥袋或藥丸），不得混用。
+2. 嚴禁包含任何額外的解釋、問候語或格式以外的文字。
+3. 如果完全找不到該項資訊或無法識別，請填寫「無法明確辨識」。
 """
 
 @app.route("/callback", methods=['POST'])
@@ -157,6 +91,45 @@ def callback():
         abort(400)
     return 'OK'
 
+@handler.add(FollowEvent)
+def handle_follow(event):
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        line_bot_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TemplateMessage(
+                    alt_text="請選擇您的語言",
+                    template=ButtonsTemplate(
+                        title="請選擇語言 / Please select language",
+                        text="請選擇藥物資訊的顯示語言：",
+                        actions=[
+                            PostbackAction(label="繁體中文", data="lang=zh"),
+                            PostbackAction(label="English", data="lang=en"),
+                            PostbackAction(label="Bahasa Indonesia", data="lang=id")
+                        ]
+                    )
+                )]
+            )
+        )
+
+@handler.add(PostbackEvent)
+def handle_postback(event):
+    if event.postback.data.startswith("lang="):
+        lang_code = event.postback.data.split("=")[1]
+        user_id = event.source.user_id
+        user_language_prefs[user_id] = lang_code
+        
+        reply_text = f"語言已設定為：{LANGUAGE_MAP.get(lang_code)}"
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=reply_text)]
+                )
+            )
+
 @handler.add(MessageEvent, message=ImageMessageContent)
 def handle_image_message(event):
     with ApiClient(configuration) as api_client:
@@ -167,19 +140,15 @@ def handle_image_message(event):
             print("\n[系統] ➔ 收到來自 LINE 的圖片訊息！開始處理...")
             message_id = event.message.id
             
-            # 1. 下載圖片（新版正確寫法：使用讀取或迭代器獲取 binary 資料）
+            # 1. 下載圖片
             message_content = line_bot_blob_api.get_message_content(message_id)
-            
-            # 💡 【關鍵修改】用 BytesIO 把圖片內容完整寫入記憶體
             image_bytes = io.BytesIO()
             if hasattr(message_content, 'iter_content'):
                 for chunk in message_content.iter_content():
                     image_bytes.write(chunk)
             else:
-                # 備用方案：如果不是串流，直接讀取整個 body
                 image_bytes.write(message_content if isinstance(message_content, bytes) else message_content.read())
             
-            # ✨ 確保將讀取位置歸零，雲端環境（Linux）非常需要這行！
             image_bytes.seek(0)
             print("[系統] ➔ 成功下載圖片。")
             
@@ -187,15 +156,18 @@ def handle_image_message(event):
             img = Image.open(image_bytes)
             print("[系統] ➔ 圖片轉換成功，正在傳送給 Gemini AI 辨識...")
             
-            # 3. 使用最新版套件呼叫 Gemini
-            # 💡 提示：如果 gemini-2.5-flash 在你們的環境噴 404，可以改回 'models/gemini-1.5-flash'
-        # --- 修改的部分開始 ---
+            # 3. 根據使用者選擇的語言動態生成 Prompt
             user_id = event.source.user_id
             lang = user_language_prefs.get(user_id, "zh")
-            lang_instruction = f"請使用「{LANGUAGE_MAP[lang]}」語言來填寫以下表單。"
-            prompt_content = f"{lang_instruction}\n\n請填寫以下這份表單，將藥袋中的資訊填入對應的括號中：\n{PROMPT_TEMPLATE}"
             
-            # 3. 使用最新版套件呼叫 Gemini
+            # 提示 AI 先判斷照片種類，再用指定語言回答
+            prompt_content = (
+                f"請先判斷這張照片是「藥袋」還是「藥丸/藥片/膠囊」。\n"
+                f"接著，請全程使用「{LANGUAGE_MAP[lang]}」語言，並嚴格依照系統指令（System Instruction）中對應的格式標籤進行回覆。\n"
+                f"如果是藥丸，請仔細放大觀察上面的刻字、顏色和形狀進行比對。"
+            )
+            
+            # 4. 呼叫 Gemini 2.5 Flash
             response = ai_client.models.generate_content(
                 model='gemini-2.5-flash',
                 contents=[img, prompt_content],
@@ -203,7 +175,7 @@ def handle_image_message(event):
                     system_instruction=SYSTEM_INSTRUCTION
                 )
             )
-            # --- 修改的部分結束 ---
+            
             result_text = response.text.strip()
             print("[系統] ➔ Gemini 辨識完成！準備回傳給 LINE。")
             
@@ -211,7 +183,7 @@ def handle_image_message(event):
             print(f"\n❌ [錯誤原因] ➔ {e}\n")
             result_text = "❌ 辨識失敗。可能原因：照片過於模糊、反光、或是 Google AI 連線超時。請重新拍攝並再試一次！"
             
-        # 4. 回傳給使用者
+        # 5. 回傳給使用者
         try:
             line_bot_api.reply_message(
                 ReplyMessageRequest(
@@ -224,7 +196,5 @@ def handle_image_message(event):
             print(f"❌ [回傳失敗] ➔ {reply_error}")
 
 if __name__ == '__main__':
-    # 讓程式自動去讀取環境變數中的 PORT，如果讀不到（例如在自己電腦跑）就預設用 5000
     port = int(os.environ.get("PORT", 5000))
-    # 必須將 host 改為 '0.0.0.0'，雲端伺服器才連得進來
     app.run(host='0.0.0.0', port=port)
