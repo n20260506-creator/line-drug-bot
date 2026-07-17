@@ -154,9 +154,9 @@ def handle_text_message(event):
     # 建立「訊息文字」對應「秒數」與「回覆文字」的對照表
     # 5分鐘 = 300秒 / 10分鐘 = 600秒 / 15分鐘 = 900秒
     timer_options = {
-        "我還沒吃藥，5分鐘後提醒我": {"seconds": 300, "text": "5"},
-        "我還沒吃藥，10分鐘後提醒我": {"seconds": 600, "text": "10"},
-        "我還沒吃藥，15分鐘後提醒我": {"seconds": 900, "text": "15"}
+        "5分鐘後提醒我": {"seconds": 300, "text": "5"},
+        "10分鐘後提醒我": {"seconds": 600, "text": "10"},
+        "15分鐘後提醒我": {"seconds": 900, "text": "15"}
     }
     
     with ApiClient(configuration) as api_client:
