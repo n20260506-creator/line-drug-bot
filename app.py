@@ -1,5 +1,6 @@
 import os
 import io
+import threading
 from flask import Flask, request, abort
 from PIL import Image
 
@@ -12,9 +13,10 @@ from linebot.v3.messaging import (
     MessagingApi,
     MessagingApiBlob,
     ReplyMessageRequest,
+    PushMessageRequest,
     TextMessage
 )
-from linebot.v3.webhooks import MessageEvent, ImageMessageContent, FollowEvent, PostbackEvent
+from linebot.v3.webhooks import MessageEvent, ImageMessageContent, FollowEvent, PostbackEvent, TextMessageContent
 from linebot.v3.messaging import TemplateMessage, ButtonsTemplate, PostbackAction
 
 # 引入 Google 2026 最新官方 GenAI 套件
@@ -80,6 +82,20 @@ SYSTEM_INSTRUCTION = """
 2. 嚴禁包含任何額外的解釋、問候語或格式以外的文字。
 3. 如果完全找不到該項資訊或無法識別，請填寫「無法明確辨識」。
 """
+# 負責在 5 分鐘（300秒）後主動推播提醒的背景任務
+def send_delay_reminder(user_id):
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        try:
+            line_bot_api.push_message(
+                PushMessageRequest(
+                    to=user_id,
+                    messages=[TextMessage(text="🔔 提醒您該吃藥囉！")]
+                )
+            )
+            print(f"[提醒系統] ➔ 已成功發送提醒給用戶 {user_id}")
+        except Exception as e:
+            print(f"❌ [提醒發送失敗] ➔ {e}")
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -129,6 +145,44 @@ def handle_postback(event):
                     messages=[TextMessage(text=reply_text)]
                 )
             )
+
+@handler.add(MessageEvent, message=TextMessageContent)
+def handle_text_message(event):
+    user_message = event.message.text.strip()
+    user_id = event.source.user_id  # 取得用戶的 LINE ID，供 5、10、15 分鐘後推播使用
+    
+    # 建立「訊息文字」對應「秒數」與「回覆文字」的對照表
+    # 5分鐘 = 300秒 / 10分鐘 = 600秒 / 15分鐘 = 900秒
+    timer_options = {
+        "我還沒吃藥，5分鐘後提醒我": {"seconds": 300, "text": "5"},
+        "我還沒吃藥，10分鐘後提醒我": {"seconds": 600, "text": "10"},
+        "我還沒吃藥，15分鐘後提醒我": {"seconds": 900, "text": "15"}
+    }
+    
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        
+        # 檢查用戶傳來的訊息有沒有在我們的對照表裡
+        if user_message in timer_options:
+            selected_option = timer_options[user_message]
+            delay_seconds = selected_option["seconds"]
+            minutes_text = selected_option["text"]
+            
+            try:
+                # 1. 立刻回覆用戶確認訊息（確保 5 秒內回應，避免超時）
+                line_bot_api.reply_message(
+                    ReplyMessageRequest(
+                        reply_token=event.reply_token,
+                        messages=[TextMessage(text=f"⏰ 好的！已為您設定 {minutes_text} 分鐘後的吃藥提醒。")]
+                    )
+                )
+                
+                # 2. 根據對應的秒數，在背景啟動計時器，時間到就執行最上方設定好的 send_delay_reminder 函式
+                threading.Timer(delay_seconds, send_delay_reminder, args=[user_id]).start()
+                print(f"[系統] ➔ 已為用戶 {user_id} 建立 {minutes_text} 分鐘後的吃藥提醒。")
+                
+            except Exception as reply_error:
+                print(f"❌ [發送即時確認失敗] ➔ {reply_error}")
 
 @handler.add(MessageEvent, message=ImageMessageContent)
 def handle_image_message(event):
