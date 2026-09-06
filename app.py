@@ -208,6 +208,7 @@ def handle_image_message(event):
             
             # 2. 轉換圖片格式
             img = Image.open(image_bytes)
+            img.thumbnail((1024, 1024))
             print("[系統] ➔ 圖片轉換成功，正在傳送給 Gemini AI 辨識...")
             
             # 3. 根據使用者選擇的語言動態生成 Prompt
