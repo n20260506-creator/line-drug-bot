@@ -222,9 +222,9 @@ def handle_image_message(event):
                 f"如果是藥丸，請仔細放大觀察上面的刻字、顏色和形狀進行比對。"
             )
             
-            # 4. 呼叫 Gemini 2.5 Flash
+            # 4. 呼叫 Gemini 3.8 Flash
             response = ai_client.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-3.8-flash',
                 contents=[img, prompt_content],
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_INSTRUCTION
