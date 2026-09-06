@@ -206,10 +206,16 @@ def handle_image_message(event):
             image_bytes.seek(0)
             print("[系統] ➔ 成功下載圖片。")
             
-            # 2. 轉換圖片格式
-            img = Image.open(image_bytes)
-            img.thumbnail((1024, 1024))
-            print("[系統] ➔ 圖片轉換成功，正在傳送給 Gemini AI 辨識...")
+            # 2. 轉換圖片格式（強制壓縮並釋放記憶體）
+            with Image.open(image_bytes) as raw_img:
+                raw_img.thumbnail((1024, 1024))
+                compressed_io = io.BytesIO()
+                raw_img.convert("RGB").save(compressed_io, format="JPEG", quality=75)
+                compressed_io.seek(0)
+                img = Image.open(compressed_io)
+            
+            image_bytes.close()  # 強制關閉大圖暫存，立刻把記憶體還給系統
+            print("[系統] ➔ 圖片壓縮轉換成功，正在傳送給 Gemini AI 辨識...")
             
             # 3. 根據使用者選擇的語言動態生成 Prompt
             user_id = event.source.user_id
