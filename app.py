@@ -223,22 +223,45 @@ def handle_image_message(event):
                 f"如果是藥丸，請仔細放大觀察上面的刻字、顏色和形狀進行比對。"
             )
             
-            # 4. 呼叫 Gemini 2.5 Flash (修正模型名稱)
-            response = ai_client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=[img, prompt_content],
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_INSTRUCTION
-                )
-            )
-            
-            result_text = response.text.strip()
-            print("[系統] ➔ Gemini 辨識完成！準備回傳給 LINE。")
-            
-        except Exception as e:
-            print(f"\n❌ [錯誤原因] ➔ {e}\n")
-            result_text = "❌ 辨識失敗。可能原因：照片過於模糊、反光、或是 Google AI 連線超時。請重新拍攝並再試一次！"
-            
+            # 4. 呼叫 Gemini (三道防線：2.5-flash -> 1.5-flash -> 1.5-pro + 退避重試)
+        import time
+
+        candidate_models = [
+            'gemini-2.5-flash',
+            'gemini-1.5-flash',
+            'gemini-1.5-pro',
+        ]
+        response = None
+        last_error = None
+
+        for model_name in candidate_models:
+          for attempt in range(2):
+            try:
+              print(
+                  f'[系統] ➔ 嘗試使用模型 {model_name} (第'
+                  f' {attempt+1} 次)...'
+              )
+              response = ai_client.models.generate_content(
+                  model=model_name,
+                  contents=[img, prompt_content],
+                  config=types.GenerateContentConfig(
+                      system_instruction=SYSTEM_INSTRUCTION
+                  ),
+              )
+              if response:
+                break
+            except Exception as err:
+              last_error = err
+              print(f'⚠️ [{model_name} 發生 503 塞車] ➔ {err}')
+              time.sleep(3)
+          if response:
+            break
+
+        if not response:
+          raise last_error
+
+        result_text = response.text.strip()
+        print('[系統] ➔ Gemini 辨識完成！準備回傳給 LINE。')
         # 5. 回傳給使用者
         try:
             line_bot_api.reply_message(
