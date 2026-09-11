@@ -1,5 +1,6 @@
 import os
 import io
+import time
 import threading
 from flask import Flask, request, abort
 from PIL import Image
@@ -200,7 +201,7 @@ def handle_image_message(event):
             image_bytes.seek(0)
             print("[系統] ➔ 成功下載圖片。")
             
-            # 2. 安全壓縮圖片（限制 800x800 以內，完美防止 Render 512MB 記憶體爆表）
+            # 2. 安全壓縮圖片（限制 800x800 以內，防止 Render 512MB 記憶體爆表）
             raw_img = Image.open(image_bytes)
             raw_img.thumbnail((800, 800))
             
@@ -209,7 +210,7 @@ def handle_image_message(event):
             compressed_io.seek(0)
             img = Image.open(compressed_io)
             
-            image_bytes.close() # 釋放大圖記憶體
+            image_bytes.close()  # 釋放大圖記憶體
             print("[系統] ➔ 圖片極限壓縮成功，正在傳送給 Gemini AI 辨識...")
             
             # 3. 根據語言生成 Prompt
@@ -224,44 +225,44 @@ def handle_image_message(event):
             )
             
             # 4. 呼叫 Gemini (三道防線：2.5-flash -> 1.5-flash -> 1.5-pro + 退避重試)
-        import time
+            candidate_models = [
+                'gemini-2.5-flash',
+                'gemini-1.5-flash',
+                'gemini-1.5-pro',
+            ]
+            response = None
+            last_error = None
 
-        candidate_models = [
-            'gemini-2.5-flash',
-            'gemini-1.5-flash',
-            'gemini-1.5-pro',
-        ]
-        response = None
-        last_error = None
+            for model_name in candidate_models:
+                for attempt in range(2):
+                    try:
+                        print(f"[系統] ➔ 嘗試使用模型 {model_name} (第 {attempt+1} 次)...")
+                        response = ai_client.models.generate_content(
+                            model=model_name,
+                            contents=[img, prompt_content],
+                            config=types.GenerateContentConfig(
+                                system_instruction=SYSTEM_INSTRUCTION
+                            ),
+                        )
+                        if response:
+                            break
+                    except Exception as err:
+                        last_error = err
+                        print(f"⚠️ [{model_name} 發生 503 塞車] ➔ {err}")
+                        time.sleep(3)
+                if response:
+                    break
 
-        for model_name in candidate_models:
-          for attempt in range(2):
-            try:
-              print(
-                  f'[系統] ➔ 嘗試使用模型 {model_name} (第'
-                  f' {attempt+1} 次)...'
-              )
-              response = ai_client.models.generate_content(
-                  model=model_name,
-                  contents=[img, prompt_content],
-                  config=types.GenerateContentConfig(
-                      system_instruction=SYSTEM_INSTRUCTION
-                  ),
-              )
-              if response:
-                break
-            except Exception as err:
-              last_error = err
-              print(f'⚠️ [{model_name} 發生 503 塞車] ➔ {err}')
-              time.sleep(3)
-          if response:
-            break
+            if not response:
+                raise last_error
 
-        if not response:
-          raise last_error
+            result_text = response.text.strip()
+            print("[系統] ➔ Gemini 辨識完成！準備回傳給 LINE。")
 
-        result_text = response.text.strip()
-        print('[系統] ➔ Gemini 辨識完成！準備回傳給 LINE。')
+        except Exception as e:
+            print(f"\n❌ [錯誤原因] ➔ {e}\n")
+            result_text = "❌ 辨識失敗。可能原因：照片過於模糊、反光、或是 Google AI 連線超時。請重新拍攝並再試一次！"
+
         # 5. 回傳給使用者
         try:
             line_bot_api.reply_message(
