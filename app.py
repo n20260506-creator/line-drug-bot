@@ -224,11 +224,9 @@ def handle_image_message(event):
                 f"如果是藥丸，請仔細放大觀察上面的刻字、顏色和形狀進行比對。"
             )
             
-            # 4. 呼叫 Gemini (三道防線：2.5-flash -> 1.5-flash -> 1.5-pro + 退避重試)
+            # 4. 呼叫 Gemini (1.5-flash)
             candidate_models = [
-                'gemini-2.5-flash',
-                'gemini-1.5-flash',
-                'gemini-1.5-pro',
+                'gemini-1.5-flash', 
             ]
             response = None
             last_error = None
