@@ -224,7 +224,7 @@ def handle_image_message(event):
                 f"如果是藥丸，請仔細放大觀察上面的刻字、顏色和形狀進行比對。"
             )
             
-            # 4. 呼叫 Gemini (2.0-flash)
+            # 4. 呼叫 Gemini 
              candidate_models = [
                'gemini-3.6-flash',
                 ]
