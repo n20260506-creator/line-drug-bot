@@ -225,9 +225,10 @@ def handle_image_message(event):
             )
             
             # 4. 呼叫 Gemini (2.0-flash)
-            candidate_models = [
-                'gemini-2.0-flash',
-               ]
+             candidate_models = [
+            'gemini-2.0-flash',
+            'gemini-2.0-flash-lite' # 增加備用模型，提高穩定度
+                ]
             response = None
             last_error = None
 
