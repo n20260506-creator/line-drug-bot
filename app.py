@@ -227,6 +227,7 @@ def handle_image_message(event):
             # 4. 呼叫 Gemini (1.5-flash)
            # 4. 呼叫 Gemini (1.5-flash)
             candidate_models = [
+                'gemini-1.5-pro',
                 'gemini-1.5-flash',
                ]
             response = None
