@@ -252,11 +252,11 @@ def handle_image_message(event):
 3. 嚴格依照系統指令（System Instruction）中規定的格式標籤進行排版。
 """
             
-            # 4. 呼叫 Gemini (設定有效 2.x 系列模型備援)
+            # 4. 呼叫 Gemini (使用 Google 官方指定之有效現行模型名單)
             candidate_models = [
                 'gemini-2.5-flash',
-                'gemini-2.0-flash',
-                'gemini-2.5-pro'
+                'gemini-3.6-flash',
+                'gemini-3.1-pro-preview'
             ]
             response = None
             last_error = None
@@ -276,7 +276,7 @@ def handle_image_message(event):
                             break
                     except Exception as err:
                         last_error = err
-                        print(f"⚠️ [{model_name} 發生 503 塞車] ➔ {err}")
+                        print(f"⚠️ [{model_name} 呼叫異常] ➔ {err}")
                         time.sleep(3)
                 if response:
                     break
