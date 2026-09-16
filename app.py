@@ -252,17 +252,9 @@ def handle_image_message(event):
 3. 嚴格依照系統指令（System Instruction）中規定的格式標籤進行排版。
 """
             
-           # 4. 呼叫 Gemini (將最順暢、穩定的 3.6-flash 設為第一順位以極大化速度)
-            candidate_models = [
-                'gemini-3.6-flash',
-                'gemini-2.5-flash',
-            ]
-            response = None
-            last_error = None
-
-            for model_name in candidate_models:
-                # 優先嘗試極速的 3.6-flash；若遇尖峰，1 秒內無縫切換 2.5-flash 備援
+            # 4. 呼叫 Gemini (優先 3.6-flash 秒回，遇尖峰無縫切換 2.5-flash)
             try:
+                print("[系統] ➔ 嘗試使用極速模型 gemini-3.6-flash...")
                 response = ai_client.models.generate_content(
                     model='gemini-3.6-flash',
                     contents=[img, prompt_content],
@@ -271,7 +263,7 @@ def handle_image_message(event):
                     ),
                 )
             except Exception as primary_err:
-                print(f"⚠️ [3.6-flash 遇到尖峰或塞車，立即切換 2.5 備援] ➔ {primary_err}")
+                print(f"⚠️ [3.6-flash 遇到尖峰，立即切換 2.5-flash 備援] ➔ {primary_err}")
                 response = ai_client.models.generate_content(
                     model='gemini-2.5-flash',
                     contents=[img, prompt_content],
