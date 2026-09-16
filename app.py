@@ -262,28 +262,27 @@ def handle_image_message(event):
             last_error = None
 
             for model_name in candidate_models:
-                try:
-                    print(f"[系統] ➔ 嘗試使用模型 {model_name}...")
-                    response = ai_client.models.generate_content(
-                        model=model_name,
-                        contents=[img, prompt_content],
-                        config=types.GenerateContentConfig(
-                            system_instruction=SYSTEM_INSTRUCTION
-                        ),
-                    )
-                    if response:
-                        break
-                except Exception as err:
-                    last_error = err
-                    print(f"⚠️ [{model_name} 呼叫異常，立即切換備援] ➔ {err}")
-                    time.sleep(1)  # 僅需短暫緩衝 1 秒即刻切換下一個模型
-
-            if not response:
-                raise last_error
+                # 優先嘗試極速的 3.6-flash；若遇尖峰，1 秒內無縫切換 2.5-flash 備援
+            try:
+                response = ai_client.models.generate_content(
+                    model='gemini-3.6-flash',
+                    contents=[img, prompt_content],
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_INSTRUCTION
+                    ),
+                )
+            except Exception as primary_err:
+                print(f"⚠️ [3.6-flash 遇到尖峰或塞車，立即切換 2.5 備援] ➔ {primary_err}")
+                response = ai_client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=[img, prompt_content],
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_INSTRUCTION
+                    ),
+                )
 
             result_text = response.text.strip()
             print("[系統] ➔ Gemini 辨識完成！準備回傳給 LINE。")
-
         except Exception as e:
             print(f"\n❌ [錯誤原因] ➔ {e}\n")
             result_text = "❌ 辨識失敗。可能原因：照片過於模糊、反光、或是 Google AI 連線超時。請重新拍攝並再試一次！"
