@@ -256,7 +256,6 @@ def handle_image_message(event):
             candidate_models = [
                 'gemini-3.6-flash',
                 'gemini-2.5-flash',
-                'gemini-3.1-pro-preview'
             ]
             response = None
             last_error = None
