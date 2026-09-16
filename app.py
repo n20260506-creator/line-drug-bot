@@ -252,34 +252,31 @@ def handle_image_message(event):
 3. 嚴格依照系統指令（System Instruction）中規定的格式標籤進行排版。
 """
             
-            # 4. 呼叫 Gemini (使用 Google 官方指定之有效現行模型名單)
+           # 4. 呼叫 Gemini (將最順暢、穩定的 3.6-flash 設為第一順位以極大化速度)
             candidate_models = [
-                'gemini-2.5-flash',
                 'gemini-3.6-flash',
+                'gemini-2.5-flash',
                 'gemini-3.1-pro-preview'
             ]
             response = None
             last_error = None
 
             for model_name in candidate_models:
-                for attempt in range(2):
-                    try:
-                        print(f"[系統] ➔ 嘗試使用模型 {model_name} (第 {attempt+1} 次)...")
-                        response = ai_client.models.generate_content(
-                            model=model_name,
-                            contents=[img, prompt_content],
-                            config=types.GenerateContentConfig(
-                                system_instruction=SYSTEM_INSTRUCTION
-                            ),
-                        )
-                        if response:
-                            break
-                    except Exception as err:
-                        last_error = err
-                        print(f"⚠️ [{model_name} 呼叫異常] ➔ {err}")
-                        time.sleep(3)
-                if response:
-                    break
+                try:
+                    print(f"[系統] ➔ 嘗試使用模型 {model_name}...")
+                    response = ai_client.models.generate_content(
+                        model=model_name,
+                        contents=[img, prompt_content],
+                        config=types.GenerateContentConfig(
+                            system_instruction=SYSTEM_INSTRUCTION
+                        ),
+                    )
+                    if response:
+                        break
+                except Exception as err:
+                    last_error = err
+                    print(f"⚠️ [{model_name} 呼叫異常，立即切換備援] ➔ {err}")
+                    time.sleep(1)  # 僅需短暫緩衝 1 秒即刻切換下一個模型
 
             if not response:
                 raise last_error
