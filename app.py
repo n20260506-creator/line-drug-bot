@@ -4,6 +4,7 @@ import time
 import threading
 from flask import Flask, request, abort
 from PIL import Image
+from pypdf import PdfReader
 
 # 引入 LINE SDK
 from linebot.v3 import WebhookHandler
@@ -33,6 +34,23 @@ LANGUAGE_MAP = {
 }
 
 app = Flask(__name__)
+
+# ==================== [RAG 知識庫預載] ====================
+PDF_KNOWLEDGE_BASE = ""
+PDF_PATH = "drug_guide.pdf"
+
+try:
+    if os.path.exists(PDF_PATH):
+        reader = PdfReader(PDF_PATH)
+        for page in reader.pages:
+            text = page.extract_text()
+            if text:
+                PDF_KNOWLEDGE_BASE += text + "\n"
+        print(f"[RAG系統] ➔ 成功載入本地藥品知識庫 PDF，共讀取 {len(PDF_KNOWLEDGE_BASE)} 字。")
+    else:
+        print(f"[RAG系統] ⚠️ 找不到 {PDF_PATH}，將使用通用醫學知識進行辨識。")
+except Exception as e:
+    print(f"[RAG系統] ❌ 讀取 PDF 失敗: {e}")
 
 # 讀取環境變數
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
@@ -213,20 +231,32 @@ def handle_image_message(event):
             image_bytes.close()  # 釋放大圖記憶體
             print("[系統] ➔ 圖片極限壓縮成功，正在傳送給 Gemini AI 辨識...")
             
-            # 3. 根據語言生成 Prompt
+            # 3. 根據語言與 RAG 知識庫生成 Prompt
             user_id = event.source.user_id
             lang = user_language_prefs.get(user_id, "zh")
             target_lang = LANGUAGE_MAP.get(lang, "繁體中文")
             
-            prompt_content = (
-                f"請先判斷這張照片是「藥袋」還是「藥丸/藥片/膠囊」。\n"
-                f"接著，請全程使用「{target_lang}」語言，並嚴格依照系統指令（System Instruction）中對應的格式標籤進行回覆。\n"
-                f"如果是藥丸，請仔細放大觀察上面的刻字、顏色和形狀進行比對。"
-            )
+            prompt_content = f"""
+請先判斷這張照片是「藥袋」還是「藥丸/藥片/膠囊」。
+
+【參考知識庫 (RAG Knowledge Base)】：
+以下是院內/常見慢性病藥品手冊的標準對照資料：
+{PDF_KNOWLEDGE_BASE}
+
+【辨識指示】：
+1. 如果是「藥丸/藥片/膠囊」：
+   - 請仔細觀察照片中藥丸的外觀、顏色、形狀與「表面刻字/標記/數字」。
+   - **務必優先從上方的【參考知識庫】中檢索匹配的藥品**。如果刻字與外觀吻合，請直接採用知識庫中的藥品名稱、適應症與用法。
+   - 若知識庫中查無此藥，再以通用藥劑知識推測可能的藥名，並加註「未收錄於參考知識庫」。
+2. 請全程使用「{target_lang}」語言回覆。
+3. 嚴格依照系統指令（System Instruction）中規定的格式標籤進行排版。
+"""
             
-            # 4. 呼叫 Gemini 
+            # 4. 呼叫 Gemini (設定有效 2.x 系列模型備援)
             candidate_models = [
-                'gemini-3.6-flash',
+                'gemini-2.5-flash',
+                'gemini-2.0-flash',
+                'gemini-2.5-pro'
             ]
             response = None
             last_error = None
