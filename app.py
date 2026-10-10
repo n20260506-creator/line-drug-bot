@@ -283,11 +283,16 @@ def handle_image_message(event):
 
             base_result_text = response.text.strip()
 
-            # ==================== [新增 Ragas 風格：即時 Faithfulness 與相似度評分] ====================
-            similarity_score = "95%" # 預設值
-            reasoning = "比對結果與知識庫高度吻合"
-            
-            if "此藥丸非慢性病用藥，無法偵測" not in base_result_text:
+            # ==================== [修正後的 Ragas 評估邏輯] ====================
+            # 檢查是否觸發終止條件（非慢性病用藥）
+            if "此藥丸非慢性病用藥，無法偵測" in base_result_text:
+                similarity_score = "0% (未收錄)"
+                reasoning = "該藥丸不在慢性病知識庫範圍內，系統已正確攔截"
+            else:
+                # 只有成功辨識出藥物時，才進行真正的知識庫相似度與忠實度評估
+                similarity_score = "95%" 
+                reasoning = "比對結果與知識庫高度吻合"
+                
                 eval_prompt = f"""
 你是一位嚴格的醫療 RAG 系統評估裁判。請比對下方【知識庫】與【AI辨識回答】，評估其忠實度 (Faithfulness) 與知識庫匹配相似度。
 
@@ -320,10 +325,9 @@ def handle_image_message(event):
                 except Exception as eval_err:
                     print(f"⚠️ [評分計算失敗，使用預設值] ➔ {eval_err}")
 
-            # 組合最終回傳文字（加上 Ragas 相似度指標區塊）
+            # 組合最終回傳文字
             result_text = f"{base_result_text}\n\n📊 【RAG 系統評估指標】\n━━━━━━━━━━━━━━━━━━\n• 知識庫相似度 (Faithfulness)：{similarity_score}\n• 檢核說明：{reasoning}\n━━━━━━━━━━━━━━━━━━"
             print("[系統] ➔ Gemini 辨識與指標評估完成！準備回傳給 LINE。")
-
         except Exception as e:
             print(f"\n❌ [錯誤原因] ➔ {e}\n")
             result_text = "❌ 辨識失敗。可能原因：照片過於模糊、反光、或是 Google AI 連線超時。請重新拍攝並再試一次！"
