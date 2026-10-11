@@ -74,19 +74,19 @@ SYSTEM_INSTRUCTION = """
 📋 【藥袋辨識結果】
 ━━━━━━━━━━━━━━
 【藥品名稱】：
-
+[帶入藥品名稱]
 
 【適應症/用途】：
-
+[帶入適應症/用途]
 
 【用法用量】：
-
+[帶入用法用量]
 
 【副作用】：
-
+[帶入副作用]
 
 【注意事項】：
-
+[帶入注意事項]
 ━━━━━━━━━━━━━━
 💡 提示：本系統辨識結果僅供參考，用藥前請務必再次核對藥袋，並遵照醫囑。
 
@@ -308,11 +308,11 @@ def handle_image_message(event):
             if "此藥丸非慢性病用藥，無法偵測" in base_result_text:
                 similarity_score = "0% (未收錄)"
                 reasoning = "該藥丸不在慢性病知識庫範圍內"
-                metric_title = "• 與慢性病藥品匹配度"
+                metric_title = "與慢性病藥品匹配度"
             
             # 3. 判斷是「藥袋」
             elif "📋 【藥袋辨識結果】" in base_result_text:
-                metric_title = "• 圖文忠實度與準確度" # 👈 藥袋專屬指標名稱
+                metric_title = "圖文忠實度與準確度" # 👈 藥袋專屬指標名稱
                 
                 # 升級版：多模態藥袋動態評估（讓裁判同時看「原圖」與「AI回答」進行比對）
                 bag_eval_prompt = f"""
@@ -348,7 +348,7 @@ def handle_image_message(event):
             
             # 4. 判斷是「一般慢性病藥丸」
             else:
-                metric_title = "• 資訊準確度與相似度" # 👈 藥丸專屬指標名稱
+                metric_title = "資訊準確度與相似度" # 👈 藥丸專屬指標名稱
                 
                 # 慢性病藥丸辨識的動態評估：真正呼叫 LLM 裁判比對知識庫
                 pill_eval_prompt = f"""
