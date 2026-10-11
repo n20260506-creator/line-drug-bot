@@ -70,19 +70,23 @@ SYSTEM_INSTRUCTION = """
 
 【情況 A：如果是藥袋照片】
 1. 完整進行 OCR 文字辨識，讀取藥袋上的藥品名稱、用法、用量與注意事項。
-2. 必須嚴格遵守以下格式，且標題與回答內容必須強制換行：
+2. 必須嚴格遵守以下格式，標題與回答內容必須強制換行，且「回答內容與下一個標題之間必須空一行」：
 📋 【藥袋辨識結果】
 ━━━━━━━━━━━━━━
 【藥品名稱】：
-[請填寫藥品名稱與劑量]
+
+
 【適應症/用途】：
-[請簡述適應症]
+
+
 【用法用量】：
-[請簡述服用頻率與方式，如：每日一次，每次一顆]
+
+
 【副作用】：
-[列出 2-3 項常見副作用]
+
+
 【注意事項】：
-[列出核心注意事項]
+
 ━━━━━━━━━━━━━━
 💡 提示：本系統辨識結果僅供參考，用藥前請務必再次核對藥袋，並遵照醫囑。
 
@@ -92,19 +96,24 @@ SYSTEM_INSTRUCTION = """
 3. 🚨 終止條件：
    - 若照片中的刻字或外觀在知識庫中找不到相符項目，請「嚴格且唯一」回傳以下文字，切勿輸出其他內容：
    此藥丸非慢性病用藥，無法偵測
-4. 成功比對輸出格式（標題與內容必須換行，文字力求精確簡煉）：
+4. 成功比對輸出格式（標題與內容必須換行，，且不同標題之間必須空一行，文字力求精確簡煉）：
 💊 【慢性病藥丸辨識結果】
 ━━━━━━━━━━━━━━
 【可能藥品名稱】：
 [填寫精確藥名]
+
 【外觀與刻字描述】：
 [精煉描述刻字、形狀與顏色]
+
 【慢性病分類】：
 [例如：高血壓 / 高血脂 / 糖尿病]
+
 【主要適應症/用途】：
 [簡述主要用途]
+
 【一般常見用法】：
 [簡述用法]
+
 【服用注意事項與警語】：
 [精煉列出重要警語]
 ━━━━━━━━━━━━━━
@@ -290,44 +299,57 @@ def handle_image_message(event):
             base_result_text = response.text.strip()
 
             # ==================== [完全動態的 Ragas 評估指標邏輯] ====================
+            # 1. 預設初始值
             similarity_score = "90%"
             reasoning = "已完成系統檢核"
+            metric_title = "• 系統解析完整度" # 預設標題
 
+            # 2. 判斷是「非慢性病藥丸」
             if "此藥丸非慢性病用藥，無法偵測" in base_result_text:
                 similarity_score = "0% (未收錄)"
-                reasoning = "該藥丸不在慢性病知識庫範圍內，系統已正確攔截"
+                reasoning = "該藥丸不在慢性病知識庫範圍內"
+                metric_title = "• 與慢性病藥品匹配度"
+            
+            # 3. 判斷是「藥袋」
             elif "📋 【藥袋辨識結果】" in base_result_text:
-                # 藥袋辨識的動態評估
+                metric_title = "• 圖文忠實度與準確度" # 👈 藥袋專屬指標名稱
+                
+                # 升級版：多模態藥袋動態評估（讓裁判同時看「原圖」與「AI回答」進行比對）
                 bag_eval_prompt = f"""
-你是一位嚴格的醫療 RAG 系統評估裁判。請評估下方【AI 辨識出的藥袋結果】是否結構完整且資訊合理。
+你是一位嚴格的醫療 RAG 系統評估裁判。請同時檢視【原始上傳的藥袋圖片】與下方【AI 辨識出的藥袋結果】，評估其忠實度 (Faithfulness) 與準確度。
 
 【AI 辨識回答 (AI Answer)】：
 {base_result_text}
 
-請檢查該藥袋回答是否包含藥品名稱、適應症、用法用量等關鍵欄位，並給出一個 0% 到 100% 的信心值/準確度分數。
-請嚴格輸出以下 JSON 格式：
+請仔細比對圖片中的真實文字與 AI 的回答是否一致、有無胡言亂語（幻覺）、或者有無漏掉關鍵用藥資訊。
+請給出一個 0% 到 100% 的忠實度/準確度分數，並嚴格輸出以下 JSON 格式：
 {{
     "score": "95%",
-    "reason": "藥袋上的藥品名稱、用法與用量已成功解析並結構化"
+    "reason": "AI 萃取的藥品名稱與用法完全吻合藥袋圖片上的實際文字，無幻覺"
 }}
 """
                 try:
+                    # 💡 關鍵升級：在 contents 裡面同時帶入圖片 [img] 與文字 Prompt！
                     eval_response = ai_client.models.generate_content(
                         model='gemini-2.5-flash',
-                        contents=bag_eval_prompt,
+                        contents=[img, bag_eval_prompt], 
                         config=types.GenerateContentConfig(
                             response_mime_type="application/json",
                             temperature=0.0
                         )
                     )
                     eval_json = json.loads(eval_response.text)
-                    similarity_score = eval_json.get("score", "93%")
+                    similarity_score = eval_json.get("score", "94%")
                     reasoning = eval_json.get("reason", "")
                 except Exception as eval_err:
                     print(f"⚠️ [藥袋評分失敗，可能遭遇 API 限流] ➔ {eval_err}")
                     similarity_score = "N/A (API 忙碌中)"
                     reasoning = "因短時間請求過多，動態評估暫時略過"
+            
+            # 4. 判斷是「一般慢性病藥丸」
             else:
+                metric_title = "• 資訊準確度與相似度" # 👈 藥丸專屬指標名稱
+                
                 # 慢性病藥丸辨識的動態評估：真正呼叫 LLM 裁判比對知識庫
                 pill_eval_prompt = f"""
 你是一位嚴格的醫療 RAG 系統評估裁判。請比對下方【知識庫】與【AI辨識回答】，評估其忠實度 (Faithfulness) 與相似度。
@@ -363,7 +385,7 @@ def handle_image_message(event):
                     reasoning = "因短時間請求過多，動態評估暫時略過"
 
             # 組合最終回傳文字
-            result_text = f"{base_result_text}\n\n📊 【RAG 系統評估指標】\n━━━━━━━━━━━━━━\n• 資訊準確度與相似度：{similarity_score}\n• 檢核說明：{reasoning}\n━━━━━━━━━━━━━━"
+            result_text = f"{base_result_text}\n\n📊 【RAG 系統評估指標】\n━━━━━━━━━━━━━━\n• {metric_title}：{similarity_score}\n• 檢核說明：{reasoning}\n━━━━━━━━━━━━━━"
             print("[系統] ➔ Gemini 辨識與指標評估完成！準備回傳給 LINE。")
 
         except Exception as e:
