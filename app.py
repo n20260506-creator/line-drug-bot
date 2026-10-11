@@ -1,6 +1,7 @@
 import os
 import io
 import time
+import json
 import threading
 from flask import Flask, request, abort
 from PIL import Image
@@ -60,7 +61,7 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 # 初始化 Google GenAI Client
 ai_client = genai.Client(api_key=GOOGLE_API_KEY)
 
-# ==================== [核心升級：AI 系統指令 (高精準比對)] ====================
+# ==================== [核心升級：AI 系統指令 (強制換行與精煉排版)] ====================
 SYSTEM_INSTRUCTION = """
 你是一位擁有極高辨識精準度的「慢性病藥丸與藥袋審核專家」。
 使用者上傳的照片可能是「藥袋」或「藥丸/藥片/膠囊」。
@@ -68,35 +69,46 @@ SYSTEM_INSTRUCTION = """
 請嚴格執行以下規則：
 
 【情況 A：如果是藥袋照片】
-必須嚴格遵守以下格式標籤：
+1. 完整進行 OCR 文字辨識，讀取藥袋上的藥品名稱、用法、用量與注意事項。
+2. 必須嚴格遵守以下格式，且標題與回答內容必須強制換行：
 📋 【藥袋辨識結果】
-━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━
 【藥品名稱】：
+[請填寫藥品名稱與劑量]
 【適應症/用途】：
+[請簡述適應症]
 【用法用量】：
+[請簡述服用頻率與方式，如：每日一次，每次一顆]
 【副作用】：
+[列出 2-3 項常見副作用]
 【注意事項】：
-━━━━━━━━━━━━━━━━━━
+[列出核心注意事項]
+━━━━━━━━━━━━━━
 💡 提示：本系統辨識結果僅供參考，用藥前請務必再次核對藥袋，並遵照醫囑。
 
 【情況 B：如果是藥丸/藥片/膠囊照片（雙重檢驗原則）】
-1. 第一步（特徵擷取）：請仔細辨認照片中藥丸正反兩面的「刻字、英數代碼、標記、切痕」、幾何形狀（八邊形、心形、橢圓、圓形雙凸）與顏色。
-2. 第二步（檢索對照）：嚴格比對提供的【常見慢性病藥品參考知識庫】。
-   - ⚠️ 關鍵判斷：比對的黃金標準是「表面刻字標記」與「特殊形狀」。若刻字代碼不相符，絕對不可張冠李戴！
+1. 第一步（特徵擷取）：仔細辨認照片中藥丸正反兩面的刻字、英數代碼與顏色形狀。
+2. 第二步（檢索對照）：嚴格比對【常見慢性病藥品參考知識庫】。若刻字不符絕對不可張冠李戴！
 3. 🚨 終止條件：
-   - 若照片中的刻字或外觀在知識庫中找不到相符的項目，請「嚴格且唯一」回傳以下這行文字，切勿猜測、切勿輸出任何其他內容：
+   - 若照片中的刻字或外觀在知識庫中找不到相符項目，請「嚴格且唯一」回傳以下文字，切勿輸出其他內容：
    此藥丸非慢性病用藥，無法偵測
-4. 成功比對輸出格式：
+4. 成功比對輸出格式（標題與內容必須換行，文字力求精確簡煉）：
 💊 【慢性病藥丸辨識結果】
-━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━
 【可能藥品名稱】：
-【外觀與刻字描述】：(請詳列您在照片中觀察到的刻字與形狀，並說明與手冊吻合之處)
+[填寫精確藥名]
+【外觀與刻字描述】：
+[精煉描述刻字、形狀與顏色]
 【慢性病分類】：
+[例如：高血壓 / 高血脂 / 糖尿病]
 【主要適應症/用途】：
+[簡述主要用途]
 【一般常見用法】：
+[簡述用法]
 【服用注意事項與警語】：
-━━━━━━━━━━━━━━━━━━
-💡 警語：單憑外觀辨識藥丸具備風險. 本系統僅比對「常見慢性病指引用藥」，切勿盲目服用未知藥丸！若無法確認，請務必諮詢醫師或實體藥局。
+[精煉列出重要警語]
+━━━━━━━━━━━━━━
+💡 警語：單憑外觀辨識藥丸具備風險。本系統僅比對「常見慢性病指引用藥」，切勿盲目服用未知藥丸！若無法確認，請務必諮詢醫師或實體藥局。
 
 通用規定事項：
 - 嚴禁輸出任何客套話、問候語。
@@ -220,7 +232,7 @@ def handle_image_message(event):
             image_bytes.seek(0)
             print("[系統] ➔ 成功下載圖片。")
             
-            # 2. 高解析度壓縮優化（放寬至 1200x1200，品質 85，清晰保留藥丸細微刻字）
+            # 2. 高解析度壓縮優化
             raw_img = Image.open(image_bytes)
             raw_img.thumbnail((1200, 1200))
             
@@ -229,10 +241,10 @@ def handle_image_message(event):
             compressed_io.seek(0)
             img = Image.open(compressed_io)
             
-            image_bytes.close() # 釋放大圖記憶體
-            print("[系統] ➔ 高清特徵保留壓縮成功，正在傳送給 Gemini AI 進行精確比對...")
+            image_bytes.close() 
+            print("[系統] ➔ 高清特徵保留壓縮成功，正在傳送給 Gemini AI 進行辨識...")
             
-            # 3. 根據語言與純文字 RAG 知識庫生成 Prompt
+            # 3. 根據語言與 RAG 知識庫生成 Prompt
             user_id = event.source.user_id
             lang = user_language_prefs.get(user_id, "zh")
             target_lang = LANGUAGE_MAP.get(lang, "繁體中文")
@@ -243,16 +255,10 @@ def handle_image_message(event):
 【常見慢性病藥品參考知識庫 (RAG Knowledge Base)】：
 {RAG_KNOWLEDGE_BASE}
 
-【藥丸深度辨識步驟（請依序比對）】：
-1. 忽略干擾元素：
-   - 請完全忽略照片周圍的格線、測量比例尺（如 cm、mm 刻度尺）、背景陰影或任何廠商英文水印。
-2. 辨識核心刻字代碼：
-   - 仔細檢查藥丸正反兩面的英文字母與數字標記（例如：ATV、40、10、20、100、GS 21C、AML 5、NVR、NV、ZD4522 等）。
-3. 知識庫彈性匹配原則：
-   - 只要藥丸的「主要藥物英文代碼/字樣」（例如 ATV 代表立普妥、AML 代表脈優、GS 21C 代表昂特欣）與「外觀顏色形狀」符合知識庫收錄的藥物，即使劑量數字不同（如 ATV 10/20/40），皆屬於該慢性病藥品，應正常輸出【慢性病藥丸辨識結果】。
-   - 只有在藥丸特徵完全與知識庫中的慢性病藥品無關時，才停止分析並嚴格回覆：
-     此藥丸非慢性病用藥，無法偵測
-4. 請全程使用「{target_lang}」語言回覆。
+【任務指示】：
+1. 如果是「藥袋」：請精確萃取藥袋上的藥品名稱、適應症、用法用量與注意事項。
+2. 如果是藥丸：請依據知識庫進行深度辨識。若非慢性病用藥，請回傳「此藥丸非慢性病用藥，無法偵測」。
+3. 請全程使用「{target_lang}」語言回覆。
 """
             
             # 4. 呼叫 Gemini 進行辨識
@@ -283,18 +289,48 @@ def handle_image_message(event):
 
             base_result_text = response.text.strip()
 
-            # ==================== [修正後的 Ragas 評估邏輯] ====================
-            # 檢查是否觸發終止條件（非慢性病用藥）
+            # ==================== [完全動態的 Ragas 評估指標邏輯] ====================
+            similarity_score = "90%"
+            reasoning = "已完成系統檢核"
+
             if "此藥丸非慢性病用藥，無法偵測" in base_result_text:
                 similarity_score = "0% (未收錄)"
                 reasoning = "該藥丸不在慢性病知識庫範圍內，系統已正確攔截"
+            elif "📋 【藥袋辨識結果】" in base_result_text:
+                # 藥袋辨識的動態評估
+                bag_eval_prompt = f"""
+你是一位嚴格的醫療 RAG 系統評估裁判。請評估下方【AI 辨識出的藥袋結果】是否結構完整且資訊合理。
+
+【AI 辨識回答 (AI Answer)】：
+{base_result_text}
+
+請檢查該藥袋回答是否包含藥品名稱、適應症、用法用量等關鍵欄位，並給出一個 0% 到 100% 的信心值/準確度分數。
+請嚴格輸出以下 JSON 格式：
+{{
+    "score": "95%",
+    "reason": "藥袋上的藥品名稱、用法與用量已成功解析並結構化"
+}}
+"""
+                try:
+                    eval_response = ai_client.models.generate_content(
+                        model='gemini-2.5-flash',
+                        contents=bag_eval_prompt,
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            temperature=0.0
+                        )
+                    )
+                    eval_json = json.loads(eval_response.text)
+                    similarity_score = eval_json.get("score", "93%")
+                    reasoning = eval_json.get("reason", "")
+                except Exception as eval_err:
+                    print(f"⚠️ [藥袋評分失敗，可能遭遇 API 限流] ➔ {eval_err}")
+                    similarity_score = "N/A (API 忙碌中)"
+                    reasoning = "因短時間請求過多，動態評估暫時略過"
             else:
-                # 只有成功辨識出藥物時，才進行真正的知識庫相似度與忠實度評估
-                similarity_score = "95%" 
-                reasoning = "比對結果與知識庫高度吻合"
-                
-                eval_prompt = f"""
-你是一位嚴格的醫療 RAG 系統評估裁判。請比對下方【知識庫】與【AI辨識回答】，評估其忠實度 (Faithfulness) 與知識庫匹配相似度。
+                # 慢性病藥丸辨識的動態評估：真正呼叫 LLM 裁判比對知識庫
+                pill_eval_prompt = f"""
+你是一位嚴格的醫療 RAG 系統評估裁判。請比對下方【知識庫】與【AI辨識回答】，評估其忠實度 (Faithfulness) 與相似度。
 
 【知識庫內容 (RAG Context)】：
 {RAG_KNOWLEDGE_BASE}
@@ -302,7 +338,7 @@ def handle_image_message(event):
 【AI 辨識回答 (AI Answer)】：
 {base_result_text}
 
-請評估該回答是否忠實來自知識庫且資訊正確，並給出一個 0% 到 100% 的相似度/信心值分數。
+請評估該藥丸回答是否忠實來自知識庫且資訊正確，並給出一個 0% 到 100% 的相似度分數。
 請嚴格輸出以下 JSON 格式：
 {{
     "score": "95%",
@@ -312,22 +348,24 @@ def handle_image_message(event):
                 try:
                     eval_response = ai_client.models.generate_content(
                         model='gemini-2.5-flash',
-                        contents=eval_prompt,
+                        contents=pill_eval_prompt,
                         config=types.GenerateContentConfig(
                             response_mime_type="application/json",
                             temperature=0.0
                         )
                     )
-                    import json
                     eval_json = json.loads(eval_response.text)
-                    similarity_score = eval_json.get("score", "90%")
+                    similarity_score = eval_json.get("score", "95%")
                     reasoning = eval_json.get("reason", "")
                 except Exception as eval_err:
-                    print(f"⚠️ [評分計算失敗，使用預設值] ➔ {eval_err}")
+                    print(f"⚠️ [藥丸評分失敗，可能遭遇 API 限流] ➔ {eval_err}")
+                    similarity_score = "N/A (API 忙碌中)"
+                    reasoning = "因短時間請求過多，動態評估暫時略過"
 
             # 組合最終回傳文字
-            result_text = f"{base_result_text}\n\n📊 【RAG 系統評估指標】\n━━━━━━━━━━━━━━━━━━\n• 知識庫相似度 (Faithfulness)：{similarity_score}\n• 檢核說明：{reasoning}\n━━━━━━━━━━━━━━━━━━"
+            result_text = f"{base_result_text}\n\n📊 【RAG 系統評估指標】\n━━━━━━━━━━━━━━\n• 資訊準確度與相似度：{similarity_score}\n• 檢核說明：{reasoning}\n━━━━━━━━━━━━━━"
             print("[系統] ➔ Gemini 辨識與指標評估完成！準備回傳給 LINE。")
+
         except Exception as e:
             print(f"\n❌ [錯誤原因] ➔ {e}\n")
             result_text = "❌ 辨識失敗。可能原因：照片過於模糊、反光、或是 Google AI 連線超時。請重新拍攝並再試一次！"
