@@ -5,3 +5,6 @@ pillow
 gunicorn
 datasets
 ragas
+langchain
+langchain-community
+langchain-core
