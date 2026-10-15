@@ -3,3 +3,5 @@ line-bot-sdk
 google-genai
 pillow
 gunicorn
+datasets
+ragas
