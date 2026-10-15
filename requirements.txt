@@ -8,3 +8,5 @@ ragas
 langchain
 langchain-community
 langchain-core
+langchain-google-vertexai
+openai
