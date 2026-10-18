@@ -16,17 +16,23 @@ from linebot.v3.messaging import (
     MessagingApiBlob,
     ReplyMessageRequest,
     PushMessageRequest,
-    TextMessage
+    TextMessage,
+    TemplateMessage,
+    ButtonsTemplate,
+    PostbackAction
 )
-from linebot.v3.webhooks import MessageEvent, ImageMessageContent, FollowEvent, PostbackEvent, TextMessageContent
-from linebot.v3.messaging import TemplateMessage, ButtonsTemplate, PostbackAction
+from linebot.v3.webhooks import (
+    MessageEvent, ImageMessageContent, FollowEvent, PostbackEvent, TextMessageContent
+)
 
 # 引入 Google 最新官方 GenAI 套件
 from google import genai
 from google.genai import types
 
-# --- 語言設定功能 ---
+# --- 語言與暫存設定功能 ---
 user_language_prefs = {} 
+user_pending_data = {}  # 暫存使用者最近一次辨識出來的完整文字內容
+
 LANGUAGE_MAP = {
     "zh": "繁體中文",
     "en": "English",
@@ -61,7 +67,7 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 # 初始化 Google GenAI Client
 ai_client = genai.Client(api_key=GOOGLE_API_KEY)
 
-# ==================== [核心升級：AI 系統指令 (強制換行與精煉排版)] ====================
+# ==================== [AI 系統指令] ====================
 SYSTEM_INSTRUCTION = """
 你是一位擁有極高辨識精準度的「慢性病藥丸與藥袋審核專家」。
 使用者上傳的照片可能是「藥袋」或「藥丸/藥片/膠囊」。
@@ -94,9 +100,9 @@ SYSTEM_INSTRUCTION = """
 1. 第一步（特徵擷取）：仔細辨認照片中藥丸正反兩面的刻字、英數代碼與顏色形狀。
 2. 第二步（檢索對照）：嚴格比對【常見慢性病藥品參考知識庫】。若刻字不符絕對不可張冠李戴！
 3. 🚨 終止條件：
-   - 若照片中的刻字或外觀在知識庫中找不到相符項目，請「嚴格且唯一」回傳以下文字，切勿輸出其他內容：
-   此藥丸非慢性病用藥，無法偵測
-4. 成功比對輸出格式（標題與內容必須換行，，且不同標題之間必須空一行，文字力求精確簡煉）：
+- 若照片中的刻字或外觀在知識庫中找不到相符項目，請「嚴格且唯一」回傳以下文字，切勿輸出其他內容：
+此藥丸非慢性病用藥，無法偵測
+4. 成功比對輸出格式（標題與內容必須換行，且不同標題之間必須空一行，文字力求精確簡煉）：
 💊 【慢性病藥丸辨識結果】
 ━━━━━━━━━━━━━━
 【可能藥品名稱】：
@@ -122,6 +128,28 @@ SYSTEM_INSTRUCTION = """
 通用規定事項：
 - 嚴禁輸出任何客套話、問候語。
 """
+
+def extract_section(text, keyword):
+    """自文字結果中萃取特定標題區塊內之文字"""
+    try:
+        lines = text.split('\n')
+        capturing = False
+        result = []
+        for line in lines:
+            if keyword in line:
+                capturing = True
+                # 若該行包含冒號且冒號後有內容，一併紀錄
+                if '：' in line and len(line.split('：')) > 1 and line.split('：')[1].strip():
+                    result.append(line.split('：')[1].strip())
+                continue
+            elif capturing and ('【' in line or '━━━━━━━━━━━━━━' in line or '💡' in line):
+                break
+            elif capturing:
+                if line.strip():
+                    result.append(line.strip())
+        return "\n".join(result) if result else "（未標示 / Not specified）"
+    except Exception:
+        return "（解析中...）"
 
 def send_delay_reminder(user_id):
     with ApiClient(configuration) as api_client:
@@ -157,7 +185,7 @@ def handle_follow(event):
                 messages=[TemplateMessage(
                     alt_text="請選擇您的語言",
                     template=ButtonsTemplate(
-                        title="請選擇語言 / Please select language",
+                        title="請選擇語言 / Select Language",
                         text="請選擇藥物資訊的顯示語言：",
                         actions=[
                             PostbackAction(label="繁體中文", data="lang=zh"),
@@ -171,18 +199,105 @@ def handle_follow(event):
 
 @handler.add(PostbackEvent)
 def handle_postback(event):
-    if event.postback.data.startswith("lang="):
-        lang_code = event.postback.data.split("=")[1]
-        user_id = event.source.user_id
-        user_language_prefs[user_id] = lang_code
-        
-        reply_text = f"語言已設定為：{LANGUAGE_MAP.get(lang_code, '繁體中文')}"
-        with ApiClient(configuration) as api_client:
-            line_bot_api = MessagingApi(api_client)
+    data = event.postback.data
+    user_id = event.source.user_id
+    
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+
+        # 1. 語言設定
+        if data.startswith("lang="):
+            lang_code = data.split("=")[1]
+            user_language_prefs[user_id] = lang_code
+            reply_text = f"語言已設定為：{LANGUAGE_MAP.get(lang_code, '繁體中文')}"
             line_bot_api.reply_message(
                 ReplyMessageRequest(
                     reply_token=event.reply_token,
                     messages=[TextMessage(text=reply_text)]
+                )
+            )
+
+        # 2. 處理藥袋點選細節
+        elif data.startswith("view_bag="):
+            view_type = data.split("=")[1]
+            stored_data = user_pending_data.get(user_id, "查無近期辨識資料，請重新上傳照片。")
+            warning_info = extract_section(stored_data, "注意事項")
+
+            if view_type == "name":
+                val = extract_section(stored_data, "藥品名稱")
+                reply_msg = f"🏷️ 【藥品名稱】：\n{val}\n\n⚠️ 【注意事項】：\n{warning_info}"
+            elif view_type == "usage":
+                val = extract_section(stored_data, "適應症/用途")
+                reply_msg = f"🎯 【適應症/用途】：\n{val}\n\n⚠️ 【注意事項】：\n{warning_info}"
+            elif view_type == "dose":
+                val = extract_section(stored_data, "用法用量")
+                reply_msg = f"⏰ 【用法用量】：\n{val}\n\n⚠️ 【注意事項】：\n{warning_info}"
+            elif view_type == "side_effect":
+                val = extract_section(stored_data, "副作用")
+                reply_msg = f"🧪 【副作用】：\n{val}\n\n⚠️ 【注意事項】：\n{warning_info}"
+            else:
+                reply_msg = stored_data
+
+            # 再次附上選單供使用者連續查閱
+            bag_menu = TemplateMessage(
+                alt_text="請選擇您想了解的藥袋資訊",
+                template=ButtonsTemplate(
+                    title="📋 藥袋資訊細節查詢",
+                    text="請選擇您想了解的項目：",
+                    actions=[
+                        PostbackAction(label="🏷️ 藥品名稱", data="view_bag=name"),
+                        PostbackAction(label="🎯 適應症/用途", data="view_bag=usage"),
+                        PostbackAction(label="⏰ 用法用量", data="view_bag=dose"),
+                        PostbackAction(label="🧪 副作用", data="view_bag=side_effect")
+                    ]
+                )
+            )
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=reply_msg), bag_menu]
+                )
+            )
+
+        # 3. 處理藥丸點選細節
+        elif data.startswith("view_pill="):
+            view_type = data.split("=")[1]
+            stored_data = user_pending_data.get(user_id, "查無近期辨識資料，請重新上傳照片。")
+            warning_info = extract_section(stored_data, "服用注意事項與警語")
+
+            if view_type == "name":
+                val = extract_section(stored_data, "可能藥品名稱")
+                reply_msg = f"🏷️ 【可能藥品名稱】：\n{val}\n\n⚠️ 【注意事項與警語】：\n{warning_info}"
+            elif view_type == "category":
+                val = extract_section(stored_data, "慢性病分類")
+                reply_msg = f"🩺 【慢性病分類】：\n{val}\n\n⚠️ 【注意事項與警語】：\n{warning_info}"
+            elif view_type == "usage":
+                val = extract_section(stored_data, "主要適應症/用途")
+                reply_msg = f"🎯 【主要適應症/用途】：\n{val}\n\n⚠️ 【注意事項與警語】：\n{warning_info}"
+            elif view_type == "dose":
+                val = extract_section(stored_data, "一般常見用法")
+                reply_msg = f"⏰ 【一般常見用法】：\n{val}\n\n⚠️ 【注意事項與警語】：\n{warning_info}"
+            else:
+                reply_msg = stored_data
+
+            # 再次附上選單供使用者連續查閱
+            pill_menu = TemplateMessage(
+                alt_text="請選擇您想了解的藥丸資訊",
+                template=ButtonsTemplate(
+                    title="💊 藥丸資訊細節查詢",
+                    text="請選擇您想了解的項目：",
+                    actions=[
+                        PostbackAction(label="🏷️ 可能藥品名稱", data="view_pill=name"),
+                        PostbackAction(label="🩺 慢性病分類", data="view_pill=category"),
+                        PostbackAction(label="🎯 主要適應症/用途", data="view_pill=usage"),
+                        PostbackAction(label="⏰ 一般常見用法", data="view_pill=dose")
+                    ]
+                )
+            )
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=reply_msg), pill_menu]
                 )
             )
 
@@ -297,39 +412,33 @@ def handle_image_message(event):
                 raise last_error
 
             base_result_text = response.text.strip()
+            user_pending_data[user_id] = base_result_text  # 暫存結果給選單讀取
 
-            # ==================== [完全動態的 Ragas 評估指標邏輯] ====================
-            # 1. 預設初始值
+            # ==================== [動態 Ragas 評估指標邏輯] ====================
             similarity_score = "90%"
             reasoning = "已完成系統檢核"
-            metric_title = "• 系統解析完整度" # 預設標題
+            metric_title = "•系統解析完整度"
 
-            # 2. 判斷是「非慢性病藥丸」
             if "此藥丸非慢性病用藥，無法偵測" in base_result_text:
                 similarity_score = "0% (未收錄)"
                 reasoning = "該藥丸不在慢性病知識庫範圍內"
                 metric_title = "與慢性病藥品匹配度"
             
-            # 3. 判斷是「藥袋」
             elif "📋 【藥袋辨識結果】" in base_result_text:
-                metric_title = "圖文忠實度與準確度" # 👈 藥袋專屬指標名稱
-                
-                # 升級版：多模態藥袋動態評估（讓裁判同時看「原圖」與「AI回答」進行比對）
+                metric_title = "圖文忠實度與準確度"
                 bag_eval_prompt = f"""
 你是一位嚴格的醫療 RAG 系統評估裁判。請同時檢視【原始上傳的藥袋圖片】與下方【AI 辨識出的藥袋結果】，評估其忠實度 (Faithfulness) 與準確度。
 
 【AI 辨識回答 (AI Answer)】：
 {base_result_text}
 
-請仔細比對圖片中的真實文字與 AI 的回答是否一致、有無胡言亂語（幻覺）、或者有無漏掉關鍵用藥資訊。
 請給出一個 0% 到 100% 的忠實度/準確度分數，並嚴格輸出以下 JSON 格式：
 {{
-    "score": "95%",
-    "reason": "AI 萃取的藥品名稱與用法完全吻合藥袋圖片上的實際文字，無幻覺"
+   "score": "95%",
+   "reason": "AI 萃取的藥品名稱與用法完全吻合藥袋圖片上的實際文字，無幻覺"
 }}
 """
                 try:
-                    # 💡 關鍵升級：在 contents 裡面同時帶入圖片 [img] 與文字 Prompt！
                     eval_response = ai_client.models.generate_content(
                         model='gemini-2.5-flash',
                         contents=[img, bag_eval_prompt], 
@@ -342,15 +451,12 @@ def handle_image_message(event):
                     similarity_score = eval_json.get("score", "94%")
                     reasoning = eval_json.get("reason", "")
                 except Exception as eval_err:
-                    print(f"⚠️ [藥袋評分失敗，可能遭遇 API 限流] ➔ {eval_err}")
+                    print(f"⚠️ [藥袋評分失敗] ➔ {eval_err}")
                     similarity_score = "N/A (API 忙碌中)"
                     reasoning = "因短時間請求過多，動態評估暫時略過"
             
-            # 4. 判斷是「一般慢性病藥丸」
             else:
-                metric_title = "資訊準確度與相似度" # 👈 藥丸專屬指標名稱
-                
-                # 慢性病藥丸辨識的動態評估：真正呼叫 LLM 裁判比對知識庫
+                metric_title = "資訊準確度與相似度"
                 pill_eval_prompt = f"""
 你是一位嚴格的醫療 RAG 系統評估裁判。請比對下方【知識庫】與【AI辨識回答】，評估其忠實度 (Faithfulness) 與相似度。
 
@@ -360,11 +466,10 @@ def handle_image_message(event):
 【AI 辨識回答 (AI Answer)】：
 {base_result_text}
 
-請評估該藥丸回答是否忠實來自知識庫且資訊正確，並給出一個 0% 到 100% 的相似度分數。
-請嚴格輸出以下 JSON 格式：
+請給出一個 0% 到 100% 的相似度分數。並嚴格輸出以下 JSON 格式：
 {{
-    "score": "95%",
-    "reason": "藥名與刻字特徵完全對應知識庫內容"
+   "score": "95%",
+   "reason": "藥名與刻字特徵完全對應知識庫內容"
 }}
 """
                 try:
@@ -380,27 +485,60 @@ def handle_image_message(event):
                     similarity_score = eval_json.get("score", "95%")
                     reasoning = eval_json.get("reason", "")
                 except Exception as eval_err:
-                    print(f"⚠️ [藥丸評分失敗，可能遭遇 API 限流] ➔ {eval_err}")
+                    print(f"⚠️ [藥丸評分失敗] ➔ {eval_err}")
                     similarity_score = "N/A (API 忙碌中)"
                     reasoning = "因短時間請求過多，動態評估暫時略過"
 
-            # 組合最終回傳文字
             result_text = f"{base_result_text}\n\n📊 【RAG 系統評估指標】\n━━━━━━━━━━━━━━\n• {metric_title}：{similarity_score}\n• 檢核說明：{reasoning}\n━━━━━━━━━━━━━━"
-            print("[系統] ➔ Gemini 辨識與指標評估完成！準備回傳給 LINE。")
+            print("[系統] ➔ Gemini 辨識與指標評估完成！準備回傳完整結果與選單。")
 
         except Exception as e:
             print(f"\n❌ [錯誤原因] ➔ {e}\n")
             result_text = "❌ 辨識失敗。可能原因：照片過於模糊、反光、或是 Google AI 連線超時。請重新拍攝並再試一次！"
 
-        # 5. 回傳給使用者
+        # 5. 回傳完整結果並附帶對應選單
         try:
+            messages_to_send = [TextMessage(text=result_text)]
+            
+            # 若非辨識失敗或無法辨識的非慢性病藥丸，則附帶專屬選單
+            if "此藥丸非慢性病用藥，無法偵測" not in base_result_text and "❌ 辨識失敗" not in result_text:
+                if "📋 【藥袋辨識結果】" in base_result_text:
+                    menu_template = TemplateMessage(
+                        alt_text="請選擇您想了解的藥袋資訊",
+                        template=ButtonsTemplate(
+                            title="📋 藥袋資訊細節查詢",
+                            text="請點選下方按鈕查看特定項目：",
+                            actions=[
+                                PostbackAction(label="🏷️ 藥品名稱", data="view_bag=name"),
+                                PostbackAction(label="🎯 適應症/用途", data="view_bag=usage"),
+                                PostbackAction(label="⏰ 用法用量", data="view_bag=dose"),
+                                PostbackAction(label="🧪 副作用", data="view_bag=side_effect")
+                            ]
+                        )
+                    )
+                else:
+                    menu_template = TemplateMessage(
+                        alt_text="請選擇您想了解的藥丸資訊",
+                        template=ButtonsTemplate(
+                            title="💊 藥丸資訊細節查詢",
+                            text="請點選下方按鈕查看特定項目：",
+                            actions=[
+                                PostbackAction(label="🏷️ 可能藥品名稱", data="view_pill=name"),
+                                PostbackAction(label="🩺 慢性病分類", data="view_pill=category"),
+                                PostbackAction(label="🎯 主要適應症/用途", data="view_pill=usage"),
+                                PostbackAction(label="⏰ 一般常見用法", data="view_pill=dose")
+                            ]
+                        )
+                    )
+                messages_to_send.append(menu_template)
+
             line_bot_api.reply_message(
                 ReplyMessageRequest(
                     reply_token=event.reply_token,
-                    messages=[TextMessage(text=result_text)]
+                    messages=messages_to_send
                 )
             )
-            print("[系統] ➔ 成功將結果送回使用者的 LINE！")
+            print("[系統] ➔ 成功將完整結果與自動選單送回 LINE！")
         except Exception as reply_error:
             print(f"❌ [回傳失敗] ➔ {reply_error}")
 
