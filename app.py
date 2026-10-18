@@ -31,7 +31,7 @@ from google.genai import types
 
 # --- 語言與暫存設定功能 ---
 user_language_prefs = {} 
-user_pending_data = {}  # 暫存使用者最近一次辨識出來的完整文字內容
+user_pending_data = {}
 
 LANGUAGE_MAP = {
     "zh": "繁體中文",
@@ -60,11 +60,8 @@ LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
 
-# 初始化 LINE SDK
 configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
-
-# 初始化 Google GenAI Client
 ai_client = genai.Client(api_key=GOOGLE_API_KEY)
 
 # ==================== [AI 系統指令] ====================
@@ -130,7 +127,6 @@ SYSTEM_INSTRUCTION = """
 """
 
 def extract_section(text, keyword):
-    """自文字結果中萃取特定標題區塊內之文字"""
     try:
         lines = text.split('\n')
         capturing = False
@@ -160,7 +156,6 @@ def send_delay_reminder(user_id):
                     messages=[TextMessage(text="🔔 提醒您該吃藥囉！")]
                 )
             )
-            print(f"[提醒系統] ➔ 已成功發送提醒給用戶 {user_id}")
         except Exception as e:
             print(f"❌ [提醒發送失敗] ➔ {e}")
 
@@ -204,7 +199,6 @@ def handle_postback(event):
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
 
-        # 1. 語言設定
         if data.startswith("lang="):
             lang_code = data.split("=")[1]
             user_language_prefs[user_id] = lang_code
@@ -216,7 +210,6 @@ def handle_postback(event):
                 )
             )
 
-        # 2. 點選藥袋細節
         elif data.startswith("view_bag="):
             view_type = data.split("=")[1]
             stored_data = user_pending_data.get(user_id, "查無近期辨識資料，請重新上傳照片。")
@@ -244,7 +237,6 @@ def handle_postback(event):
                 )
             )
 
-        # 3. 點選藥丸細節
         elif data.startswith("view_pill="):
             view_type = data.split("=")[1]
             stored_data = user_pending_data.get(user_id, "查無近期辨識資料，請重新上傳照片。")
@@ -285,12 +277,10 @@ def handle_text_message(event):
     
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
-        
         if user_message in timer_options:
             selected_option = timer_options[user_message]
             delay_seconds = selected_option["seconds"]
             minutes_text = selected_option["text"]
-            
             try:
                 line_bot_api.reply_message(
                     ReplyMessageRequest(
@@ -298,10 +288,7 @@ def handle_text_message(event):
                         messages=[TextMessage(text=f"⏰ 好的！已為您設定 {minutes_text} 分鐘後的吃藥提醒。")]
                     )
                 )
-                
                 threading.Timer(delay_seconds, send_delay_reminder, args=[user_id]).start()
-                print(f"[系統] ➔ 已為用戶 {user_id} 建立 {minutes_text} 分鐘後的吃藥提醒。")
-                
             except Exception as reply_error:
                 print(f"❌ [發送即時確認失敗] ➔ {reply_error}")
 
@@ -313,9 +300,7 @@ def handle_image_message(event):
         
         base_result_text = ""
         try:
-            print("\n[系統] ➔ 收到來自 LINE 的圖片訊息！開始處理...")
             message_id = event.message.id
-            
             message_content = line_bot_blob_api.get_message_content(message_id)
             image_bytes = io.BytesIO()
             if hasattr(message_content, 'iter_content'):
@@ -325,8 +310,6 @@ def handle_image_message(event):
                 image_bytes.write(message_content if isinstance(message_content, bytes) else message_content.read())
             
             image_bytes.seek(0)
-            print("[系統] ➔ 成功下載圖片。")
-            
             raw_img = Image.open(image_bytes)
             raw_img.thumbnail((1200, 1200))
             
@@ -334,9 +317,7 @@ def handle_image_message(event):
             raw_img.convert("RGB").save(compressed_io, format="JPEG", quality=85)
             compressed_io.seek(0)
             img = Image.open(compressed_io)
-            
             image_bytes.close() 
-            print("[系統] ➔ 高清特徵保留壓縮成功，正在傳送給 Gemini AI 進行辨識...")
             
             user_id = event.source.user_id
             lang = user_language_prefs.get(user_id, "zh")
@@ -360,7 +341,6 @@ def handle_image_message(event):
 
             for model_name in candidate_models:
                 try:
-                    print(f"[系統] ➔ 嘗試使用模型 {model_name}...")
                     response = ai_client.models.generate_content(
                         model=model_name,
                         contents=[img, prompt_content],
@@ -373,7 +353,6 @@ def handle_image_message(event):
                         break
                 except Exception as err:
                     last_error = err
-                    print(f"⚠️ [{model_name} 呼叫異常，切換備援] ➔ {err}")
                     time.sleep(1)
 
             if not response:
@@ -382,7 +361,6 @@ def handle_image_message(event):
             base_result_text = response.text.strip()
             user_pending_data[user_id] = base_result_text
 
-            # ==================== [動態 Ragas 評估指標邏輯] ====================
             similarity_score = "90%"
             reasoning = "已完成系統檢核"
             metric_title = "•系統解析完整度"
@@ -391,20 +369,12 @@ def handle_image_message(event):
                 similarity_score = "0% (未收錄)"
                 reasoning = "該藥丸不在慢性病知識庫範圍內"
                 metric_title = "與慢性病藥品匹配度"
-            
             elif "📋 【藥袋辨識結果】" in base_result_text:
                 metric_title = "圖文忠實度與準確度"
                 bag_eval_prompt = f"""
-你是一位嚴格的醫療 RAG 系統評估裁判。請同時檢視【原始上傳的藥袋圖片】與下方【AI 辨識出的藥袋結果】，評估其忠實度 (Faithfulness) 與準確度。
-
-【AI 辨識回答 (AI Answer)】：
-{base_result_text}
-
-請給出一個 0% 到 100% 的忠實度/準確度分數，並嚴格輸出以下 JSON 格式：
-{{
-   "score": "95%",
-   "reason": "AI 萃取的藥品名稱與用法完全吻合藥袋圖片上的實際文字，無幻覺"
-}}
+你是一位嚴格的醫療 RAG 系統評估裁判。請同時檢視【原始上傳的藥袋圖片】與下方【AI 辨識出的藥袋結果】，評估其忠實度與準確度。
+【AI 辨識回答】：{base_result_text}
+請輸出 JSON 格式：{{"score": "95%", "reason": "無幻覺"}}
 """
                 try:
                     eval_response = ai_client.models.generate_content(
@@ -418,27 +388,16 @@ def handle_image_message(event):
                     eval_json = json.loads(eval_response.text)
                     similarity_score = eval_json.get("score", "94%")
                     reasoning = eval_json.get("reason", "")
-                except Exception as eval_err:
-                    print(f"⚠️ [藥袋評分失敗] ➔ {eval_err}")
-                    similarity_score = "N/A (API 忙碌中)"
-                    reasoning = "因短時間請求過多，動態評估暫時略過"
-            
+                except Exception:
+                    similarity_score = "N/A"
+                    reasoning = "動態評估略過"
             else:
                 metric_title = "資訊準確度與相似度"
                 pill_eval_prompt = f"""
-你是一位嚴格的醫療 RAG 系統評估裁判。請比對下方【知識庫】與【AI辨識回答】，評估其忠實度 (Faithfulness) 與相似度。
-
-【知識庫內容 (RAG Context)】：
-{RAG_KNOWLEDGE_BASE}
-
-【AI 辨識回答 (AI Answer)】：
-{base_result_text}
-
-請給出一個 0% 到 100% 的相似度分數。並嚴格輸出以下 JSON 格式：
-{{
-   "score": "95%",
-   "reason": "藥名與刻字特徵完全對應知識庫內容"
-}}
+你是一位嚴格的醫療 RAG 系統評估裁判。請比對【知識庫】與【AI辨識回答】，評估忠實度。
+【知識庫】：{RAG_KNOWLEDGE_BASE}
+【回答】：{base_result_text}
+請輸出 JSON 格式：{{"score": "95%", "reason": "完全對應"}}
 """
                 try:
                     eval_response = ai_client.models.generate_content(
@@ -452,22 +411,17 @@ def handle_image_message(event):
                     eval_json = json.loads(eval_response.text)
                     similarity_score = eval_json.get("score", "95%")
                     reasoning = eval_json.get("reason", "")
-                except Exception as eval_err:
-                    print(f"⚠️ [藥丸評分失敗] ➔ {eval_err}")
-                    similarity_score = "N/A (API 忙碌中)"
-                    reasoning = "因短時間請求過多，動態評估暫時略過"
+                except Exception:
+                    similarity_score = "N/A"
+                    reasoning = "動態評估略過"
 
             result_text = f"{base_result_text}\n\n📊 【RAG 系統評估指標】\n━━━━━━━━━━━━━━\n• {metric_title}：{similarity_score}\n• 檢核說明：{reasoning}\n━━━━━━━━━━━━━━"
-            print("[系統] ➔ Gemini 辨識與指標評估完成！準備回傳完整結果與選單。")
 
         except Exception as e:
-            print(f"\n❌ [錯誤原因] ➔ {e}\n")
             result_text = "❌ 辨識失敗。可能原因：照片過於模糊、反光、或是 Google AI 連線超時。請重新拍攝並再試一次！"
 
-        # 回傳完整結果並隨附選單按鈕
         try:
             messages_to_send = [TextMessage(text=result_text)]
-            
             if "此藥丸非慢性病用藥，無法偵測" not in base_result_text and "❌ 辨識失敗" not in result_text:
                 if "📋 【藥袋辨識結果】" in base_result_text:
                     menu_template = TemplateMessage(
@@ -505,8 +459,9 @@ def handle_image_message(event):
                     messages=messages_to_send
                 )
             )
-            print("[系統] ➔ 成功將完整結果與自動選單送回 LINE！")
         except Exception as reply_error:
             print(f"❌ [回傳失敗] ➔ {reply_error}")
 
-if __name__ ==
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
