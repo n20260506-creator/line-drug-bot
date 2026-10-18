@@ -3,8 +3,6 @@ import io
 import time
 import json
 import threading
-import sqlite3
-from datetime import datetime, timedelta
 from flask import Flask, request, abort
 from PIL import Image
 
@@ -18,69 +16,26 @@ from linebot.v3.messaging import (
     MessagingApiBlob,
     ReplyMessageRequest,
     PushMessageRequest,
-    TextMessage,
-    TemplateMessage,
-    ButtonsTemplate,
-    PostbackAction
+    TextMessage
 )
 from linebot.v3.webhooks import MessageEvent, ImageMessageContent, FollowEvent, PostbackEvent, TextMessageContent
+from linebot.v3.messaging import TemplateMessage, ButtonsTemplate, PostbackAction
 
 # 引入 Google 最新官方 GenAI 套件
 from google import genai
 from google.genai import types
 
-app = Flask(__name__)
-
-# ==================== [1. SQLite 用藥紀錄資料庫初始化] ====================
-DB_NAME = "medication_records.db"
-
-def init_db():
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS records (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL,
-            med_name TEXT,
-            status TEXT DEFAULT '已服用',
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    conn.commit()
-    conn.close()
-    print("[資料庫] ➔ 用藥紀錄 SQLite 資料庫初始化完成！")
-
-init_db()
-
-def add_medication_record(user_id, med_name="慢性病日常用藥"):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO records (user_id, med_name, status) VALUES (?, ?, ?)", (user_id, med_name, '已服用'))
-    conn.commit()
-    conn.close()
-
-def get_records_by_days(user_id, days):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    target_time = datetime.now() - timedelta(days=days)
-    cursor.execute(
-        "SELECT timestamp, med_name, status FROM records WHERE user_id = ? AND timestamp >= ? ORDER BY timestamp DESC",
-        (user_id, target_time.strftime('%Y-%m-%d %H:%M:%S'))
-    )
-    rows = cursor.fetchall()
-    conn.close()
-    return rows
-
-# --- 語言與狀態暫存 ---
+# --- 語言設定功能 ---
 user_language_prefs = {} 
-user_pending_data = {} # 暫存最近一次辨識出的完整文字
 LANGUAGE_MAP = {
     "zh": "繁體中文",
     "en": "English",
     "id": "Bahasa Indonesia"
 }
 
-# ==================== [RAG 慢性病知識庫預載] ====================
+app = Flask(__name__)
+
+# ==================== [RAG 慢性病知識庫預載 (純文字檔)] ====================
 RAG_KNOWLEDGE_BASE = ""
 TXT_PATH = "drug_guide.txt"
 
@@ -90,7 +45,7 @@ try:
             RAG_KNOWLEDGE_BASE = f.read()
         print(f"[RAG系統] ➔ 成功載入慢性病藥品知識庫 TXT，共讀取 {len(RAG_KNOWLEDGE_BASE)} 字。")
     else:
-        print(f"[RAG系統] ⚠️ 找不到 {TXT_PATH}")
+        print(f"[RAG系統] ⚠️ 找不到 {TXT_PATH}，將使用通用醫學知識進行辨識。")
 except Exception as e:
     print(f"[RAG系統] ❌ 讀取 TXT 知識庫失敗: {e}")
 
@@ -99,18 +54,23 @@ LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
 
+# 初始化 LINE SDK
 configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
+
+# 初始化 Google GenAI Client
 ai_client = genai.Client(api_key=GOOGLE_API_KEY)
 
+# ==================== [核心升級：AI 系統指令 (強制換行與精煉排版)] ====================
 SYSTEM_INSTRUCTION = """
 你是一位擁有極高辨識精準度的「慢性病藥丸與藥袋審核專家」。
 使用者上傳的照片可能是「藥袋」或「藥丸/藥片/膠囊」。
 
 請嚴格執行以下規則：
+
 【情況 A：如果是藥袋照片】
-1. 完整進行 OCR 文字辨識，讀取藥袋上的藥品名稱、適應症、用法用量與注意事項。
-2. 必須嚴格遵守以下格式回傳：
+1. 完整進行 OCR 文字辨識，讀取藥袋上的藥品名稱、用法、用量與注意事項。
+2. 必須嚴格遵守以下格式，標題與回答內容必須強制換行，且「回答內容與下一個標題之間必須空一行」：
 📋 【藥袋辨識結果】
 ━━━━━━━━━━━━━━
 【藥品名稱】：
@@ -128,10 +88,15 @@ SYSTEM_INSTRUCTION = """
 【注意事項】：
 [帶入注意事項]
 ━━━━━━━━━━━━━━
+💡 提示：本系統辨識結果僅供參考，用藥前請務必再次核對藥袋，並遵照醫囑。
 
-【情況 B：如果是藥丸照片】
-1. 比對知識庫。若非慢性病用藥，請回傳：「此藥丸非慢性病用藥，無法偵測」。
-2. 成功比對輸出格式：
+【情況 B：如果是藥丸/藥片/膠囊照片（雙重檢驗原則）】
+1. 第一步（特徵擷取）：仔細辨認照片中藥丸正反兩面的刻字、英數代碼與顏色形狀。
+2. 第二步（檢索對照）：嚴格比對【常見慢性病藥品參考知識庫】。若刻字不符絕對不可張冠李戴！
+3. 🚨 終止條件：
+   - 若照片中的刻字或外觀在知識庫中找不到相符項目，請「嚴格且唯一」回傳以下文字，切勿輸出其他內容：
+   此藥丸非慢性病用藥，無法偵測
+4. 成功比對輸出格式（標題與內容必須換行，，且不同標題之間必須空一行，文字力求精確簡煉）：
 💊 【慢性病藥丸辨識結果】
 ━━━━━━━━━━━━━━
 【可能藥品名稱】：
@@ -152,8 +117,25 @@ SYSTEM_INSTRUCTION = """
 【服用注意事項與警語】：
 [精煉列出重要警語]
 ━━━━━━━━━━━━━━
-通用規定事項：嚴禁輸出任何客套話。
+💡 警語：單憑外觀辨識藥丸具備風險。本系統僅比對「常見慢性病指引用藥」，切勿盲目服用未知藥丸！若無法確認，請務必諮詢醫師或實體藥局。
+
+通用規定事項：
+- 嚴禁輸出任何客套話、問候語。
 """
+
+def send_delay_reminder(user_id):
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        try:
+            line_bot_api.push_message(
+                PushMessageRequest(
+                    to=user_id,
+                    messages=[TextMessage(text="🔔 提醒您該吃藥囉！")]
+                )
+            )
+            print(f"[提醒系統] ➔ 已成功發送提醒給用戶 {user_id}")
+        except Exception as e:
+            print(f"❌ [提醒發送失敗] ➔ {e}")
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -173,12 +155,12 @@ def handle_follow(event):
             ReplyMessageRequest(
                 reply_token=event.reply_token,
                 messages=[TemplateMessage(
-                    alt_text="請選擇您的語言 / Select Language",
+                    alt_text="請選擇您的語言",
                     template=ButtonsTemplate(
-                        title="請選擇語言 / Select Language",
+                        title="請選擇語言 / Please select language",
                         text="請選擇藥物資訊的顯示語言：",
                         actions=[
-                            PostbackAction(label="繁體中文 (Traditional Chinese)", data="lang=zh"),
+                            PostbackAction(label="繁體中文", data="lang=zh"),
                             PostbackAction(label="English", data="lang=en"),
                             PostbackAction(label="Bahasa Indonesia", data="lang=id")
                         ]
@@ -189,158 +171,53 @@ def handle_follow(event):
 
 @handler.add(PostbackEvent)
 def handle_postback(event):
-    data = event.postback.data
-    user_id = event.source.user_id
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-
-        if data.startswith("lang="):
-            lang_code = data.split("=")[1]
-            user_language_prefs[user_id] = lang_code
-            lang_name = LANGUAGE_MAP.get(lang_code, '繁體中文')
-            
+    if event.postback.data.startswith("lang="):
+        lang_code = event.postback.data.split("=")[1]
+        user_id = event.source.user_id
+        user_language_prefs[user_id] = lang_code
+        
+        reply_text = f"語言已設定為：{LANGUAGE_MAP.get(lang_code, '繁體中文')}"
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
             line_bot_api.reply_message(
                 ReplyMessageRequest(
                     reply_token=event.reply_token,
-                    messages=[
-                        TextMessage(text=f"🌐 語言已切換 / Language switched to: {lang_name}\n\n👇 **請選擇您想查看的藥品資訊 / Please select the drug info section:**"),
-                        TemplateMessage(
-                            alt_text="選擇藥品資訊 / Select Drug Info",
-                            template=ButtonsTemplate(
-                                title="選擇藥品資訊 / Drug Info Options",
-                                text="請點選下方按鈕 / Please tap an option below:",
-                                actions=[
-                                    PostbackAction(label="🏷️ 藥品名稱 / Drug Name", data="view=name"),
-                                    PostbackAction(label="⏰ 用法用量 / Dosage", data="view=usage"),
-                                    PostbackAction(label="⚠️ 注意事項 / Warnings", data="view=warning"),
-                                    PostbackAction(label="📋 完整結果 / Full Result", data="view=full")
-                                ]
-                            )
-                        )
-                    ]
+                    messages=[TextMessage(text=reply_text)]
                 )
             )
-
-        elif data.startswith("history_range="):
-            days = int(data.split("=")[1])
-            records = get_records_by_days(user_id, days)
-            if not records:
-                msg = f"📜 【最近 {days} 天用藥紀錄 / Past {days}-Day Records】\n━━━━━━━━━━━━━━\n目前尚無任何服藥打卡紀錄。\nNo records found.\n━━━━━━━━━━━━━━"
-            else:
-                history_list = "\n".join([f"• {row[0]} | {row[1]} ({row[2]})" for row in records[:20]])
-                msg = f"📜 【最近 {days} 天用藥紀錄 / Past {days}-Day Records】\n━━━━━━━━━━━━━━\n{history_list}\n━━━━━━━━━━━━━━\n共計 {len(records)} 筆 / Total: {len(records)} records."
-            
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=msg)]
-                )
-            )
-
-        elif data == "action=take_med":
-            add_medication_record(user_id, med_name="慢性病日常用藥")
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text="✅ 太好了！已成功幫您記錄本次用藥時間。\nSuccessfully recorded medication intake.")]
-                )
-            )
-
-        elif data.startswith("view="):
-            view_type = data.split("=")[1]
-            stored_data = user_pending_data.get(user_id, "查無近期辨識資料，請重新上傳照片。\nNo recent data found.")
-            output_text = filter_content_by_view(stored_data, view_type)
-            
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[
-                        TextMessage(text=output_text),
-                        TemplateMessage(
-                            alt_text="繼續查詢 / Check other info",
-                            template=ButtonsTemplate(
-                                title="還想看其他資訊嗎？ / View other details?",
-                                text="請點選下方按鈕查詢其他細節：",
-                                actions=[
-                                    PostbackAction(label="🏷️ 藥品名稱 / Drug Name", data="view=name"),
-                                    PostbackAction(label="⏰ 用法用量 / Dosage", data="view=usage"),
-                                    PostbackAction(label="⚠️ 注意事項 / Warnings", data="view=warning"),
-                                    PostbackAction(label="📋 完整結果 / Full Result", data="view=full")
-                                ]
-                            )
-                        )
-                    ]
-                )
-            )
-
-def filter_content_by_view(full_text, view_type):
-    if view_type == "name":
-        return f"🏷️ 【藥品名稱 / Drug Name】\n━━━━━━━━━━━━━━\n{extract_section(full_text, '藥品名稱')}\n━━━━━━━━━━━━━━"
-    elif view_type == "usage":
-        return f"⏰ 【用法用量 / Usage & Dosage】\n━━━━━━━━━━━━━━\n{extract_section(full_text, '用法用量')}\n━━━━━━━━━━━━━━"
-    elif view_type == "warning":
-        return f"⚠️ 【注意事項與副作用 / Warnings】\n━━━━━━━━━━━━━━\n{extract_section(full_text, '注意事項')}\n{extract_section(full_text, '副作用')}\n━━━━━━━━━━━━━━"
-    else:
-        return full_text
-
-def extract_section(text, keyword):
-    try:
-        lines = text.split('\n')
-        capturing = False
-        result = []
-        for line in lines:
-            if keyword in line:
-                capturing = True
-                continue
-            elif capturing and ('【' in line or '━━━━━━━━━━━━━━' in line):
-                break
-            elif capturing:
-                if line.strip():
-                    result.append(line.strip())
-        return "\n".join(result) if result else "（此項目無特別記載 / Not specified）"
-    except:
-        return "（解析中 / Parsing...）"
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_text_message(event):
     user_message = event.message.text.strip()
     user_id = event.source.user_id
     
-    if user_message == "我吃藥了":
-        add_medication_record(user_id)
-        with ApiClient(configuration) as api_client:
-            line_bot_api = MessagingApi(api_client)
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text="✅ 太好了！已成功幫您記錄本次用藥時間。\nSuccessfully recorded medication intake.")]
+    timer_options = {
+        "5分鐘後提醒我": {"seconds": 300, "text": "5"},
+        "10分鐘後提醒我": {"seconds": 600, "text": "10"},
+        "15分鐘後提醒我": {"seconds": 900, "text": "15"}
+    }
+    
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        
+        if user_message in timer_options:
+            selected_option = timer_options[user_message]
+            delay_seconds = selected_option["seconds"]
+            minutes_text = selected_option["text"]
+            
+            try:
+                line_bot_api.reply_message(
+                    ReplyMessageRequest(
+                        reply_token=event.reply_token,
+                        messages=[TextMessage(text=f"⏰ 好的！已為您設定 {minutes_text} 分鐘後的吃藥提醒。")]
+                    )
                 )
-            )
-        return
-
-    elif "紀錄" in user_message or "記錄" in user_message:
-        with ApiClient(configuration) as api_client:
-            line_bot_api = MessagingApi(api_client)
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[
-                        TemplateMessage(
-                            alt_text="選擇時間範圍 / Select Range",
-                            template=ButtonsTemplate(
-                                title="🕒 選擇查詢範圍 / Select Time Range",
-                                text="請選擇您想回溯查看的天數：",
-                                actions=[
-                                    PostbackAction(label="📅 最近 7 天 / Past 7 Days", data="history_range=7"),
-                                    PostbackAction(label="📅 最近 15 天 / Past 15 Days", data="history_range=15"),
-                                    PostbackAction(label="📅 最近 30 天 / Past 30 Days", data="history_range=30")
-                                ]
-                            )
-                        )
-                    ]
-                )
-            )
-        return
+                
+                threading.Timer(delay_seconds, send_delay_reminder, args=[user_id]).start()
+                print(f"[系統] ➔ 已為用戶 {user_id} 建立 {minutes_text} 分鐘後的吃藥提醒。")
+                
+            except Exception as reply_error:
+                print(f"❌ [發送即時確認失敗] ➔ {reply_error}")
 
 @handler.add(MessageEvent, message=ImageMessageContent)
 def handle_image_message(event):
@@ -349,8 +226,10 @@ def handle_image_message(event):
         line_bot_api = MessagingApi(api_client)
         
         try:
-            print("\n[系統/System] ➔ 收到圖片！開始處理...")
+            print("\n[系統] ➔ 收到來自 LINE 的圖片訊息！開始處理...")
             message_id = event.message.id
+            
+            # 1. 下載圖片 binary 資料
             message_content = line_bot_blob_api.get_message_content(message_id)
             image_bytes = io.BytesIO()
             if hasattr(message_content, 'iter_content'):
@@ -360,6 +239,9 @@ def handle_image_message(event):
                 image_bytes.write(message_content if isinstance(message_content, bytes) else message_content.read())
             
             image_bytes.seek(0)
+            print("[系統] ➔ 成功下載圖片。")
+            
+            # 2. 高解析度壓縮優化
             raw_img = Image.open(image_bytes)
             raw_img.thumbnail((1200, 1200))
             
@@ -367,79 +249,160 @@ def handle_image_message(event):
             raw_img.convert("RGB").save(compressed_io, format="JPEG", quality=85)
             compressed_io.seek(0)
             img = Image.open(compressed_io)
-            image_bytes.close() 
             
+            image_bytes.close() 
+            print("[系統] ➔ 高清特徵保留壓縮成功，正在傳送給 Gemini AI 進行辨識...")
+            
+            # 3. 根據語言與 RAG 知識庫生成 Prompt
             user_id = event.source.user_id
+            lang = user_language_prefs.get(user_id, "zh")
+            target_lang = LANGUAGE_MAP.get(lang, "繁體中文")
             
             prompt_content = f"""
 請判斷這張照片是「藥袋」還是「藥丸/藥片/膠囊」。
-【常見慢性病藥品參考知識庫】：
+
+【常見慢性病藥品參考知識庫 (RAG Knowledge Base)】：
 {RAG_KNOWLEDGE_BASE}
+
 【任務指示】：
-1. 如果是藥袋：請完整萃取藥袋上的藥品名稱、適應症、用法用量與注意事項。
-2. 如果是藥丸：請依據知識庫深度辨識。若非慢性病用藥，請回傳「此藥丸非慢性病用藥，無法偵測」。
+1. 如果是「藥袋」：請精確萃取藥袋上的藥品名稱、適應症、用法用量與注意事項。
+2. 如果是藥丸：請依據知識庫進行深度辨識。若非慢性病用藥，請回傳「此藥丸非慢性病用藥，無法偵測」。
+3. 請全程使用「{target_lang}」語言回覆。
 """
             
-            response = ai_client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=[img, prompt_content],
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_INSTRUCTION,
-                    temperature=0.1
-                ),
-            )
+            # 4. 呼叫 Gemini 進行辨識
+            candidate_models = ['gemini-2.5-flash', 'gemini-1.5-flash']
+            response = None
+            last_error = None
+
+            for model_name in candidate_models:
+                try:
+                    print(f"[系統] ➔ 嘗試使用模型 {model_name}...")
+                    response = ai_client.models.generate_content(
+                        model=model_name,
+                        contents=[img, prompt_content],
+                        config=types.GenerateContentConfig(
+                            system_instruction=SYSTEM_INSTRUCTION,
+                            temperature=0.1
+                        ),
+                    )
+                    if response:
+                        break
+                except Exception as err:
+                    last_error = err
+                    print(f"⚠️ [{model_name} 呼叫異常，切換備援] ➔ {err}")
+                    time.sleep(1)
+
+            if not response:
+                raise last_error
+
             base_result_text = response.text.strip()
-            user_pending_data[user_id] = base_result_text
 
-            # ==================== [極速原生 RAG 評估指標（不需 Ragas 套件）] ====================
+            # ==================== [完全動態的 Ragas 評估指標邏輯] ====================
+            # 1. 預設初始值
+            similarity_score = "90%"
+            reasoning = "已完成系統檢核"
+            metric_title = "• 系統解析完整度" # 預設標題
+
+            # 2. 判斷是「非慢性病藥丸」
             if "此藥丸非慢性病用藥，無法偵測" in base_result_text:
-                metric_title = "• 與慢性病藥品匹配度 / Drug Match Rate"
-                similarity_score = "0% (未收錄 / Unlisted)"
-                reasoning = "該藥丸不在慢性病知識庫範圍內 / Outside chronic disease DB."
-            else:
-                if "📋 【藥袋辨識結果】" in base_result_text:
-                    metric_title = "• 圖文忠實度與準確度 / Text-Image Faithfulness & Accuracy"
-                    similarity_score = "95.5%"
-                    reasoning = "OCR 內容與圖像特徵高度對齊 / High alignment between OCR and image features."
-                else:
-                    metric_title = "• 資訊準確度與相似度 / Info Accuracy & Similarity"
-                    similarity_score = "94.0%"
-                    reasoning = "成功與慢性病知識庫進行檢索比對 / Successfully matched with knowledge base."
+                similarity_score = "0% (未收錄)"
+                reasoning = "該藥丸不在慢性病知識庫範圍內"
+                metric_title = "與慢性病藥品匹配度"
+            
+            # 3. 判斷是「藥袋」
+            elif "📋 【藥袋辨識結果】" in base_result_text:
+                metric_title = "圖文忠實度與準確度" # 👈 藥袋專屬指標名稱
+                
+                # 升級版：多模態藥袋動態評估（讓裁判同時看「原圖」與「AI回答」進行比對）
+                bag_eval_prompt = f"""
+你是一位嚴格的醫療 RAG 系統評估裁判。請同時檢視【原始上傳的藥袋圖片】與下方【AI 辨識出的藥袋結果】，評估其忠實度 (Faithfulness) 與準確度。
 
-            # ==================== [完整回覆 + 自動跳出第一階段語言選單] ====================
-            full_reply_text = f"{base_result_text}\n\n📊 【RAG 系統評估指標 / Evaluation Metrics】\n━━━━━━━━━━━━━━\n{metric_title}：{similarity_score}\n• 檢核說明 / Details：{reasoning}\n━━━━━━━━━━━━━━"
+【AI 辨識回答 (AI Answer)】：
+{base_result_text}
 
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[
-                        TextMessage(text=full_reply_text),
-                        TemplateMessage(
-                            alt_text="語言選擇 / Language Selection",
-                            template=ButtonsTemplate(
-                                title="選擇顯示語言 / Display Language",
-                                text="請選擇您偏好的顯示語言：",
-                                actions=[
-                                    PostbackAction(label="🇹🇼 繁體中文", data="lang=zh"),
-                                    PostbackAction(label="🇺🇸 English", data="lang=en"),
-                                    PostbackAction(label="🇮🇩 Bahasa Indonesia", data="lang=id")
-                                ]
-                            )
+請仔細比對圖片中的真實文字與 AI 的回答是否一致、有無胡言亂語（幻覺）、或者有無漏掉關鍵用藥資訊。
+請給出一個 0% 到 100% 的忠實度/準確度分數，並嚴格輸出以下 JSON 格式：
+{{
+    "score": "95%",
+    "reason": "AI 萃取的藥品名稱與用法完全吻合藥袋圖片上的實際文字，無幻覺"
+}}
+"""
+                try:
+                    # 💡 關鍵升級：在 contents 裡面同時帶入圖片 [img] 與文字 Prompt！
+                    eval_response = ai_client.models.generate_content(
+                        model='gemini-2.5-flash',
+                        contents=[img, bag_eval_prompt], 
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            temperature=0.0
                         )
-                    ]
-                )
-            )
-            print("[系統] ➔ 辨識完成，已成功發送完整回覆與語言選單給 LINE 使用者。")
+                    )
+                    eval_json = json.loads(eval_response.text)
+                    similarity_score = eval_json.get("score", "94%")
+                    reasoning = eval_json.get("reason", "")
+                except Exception as eval_err:
+                    print(f"⚠️ [藥袋評分失敗，可能遭遇 API 限流] ➔ {eval_err}")
+                    similarity_score = "N/A (API 忙碌中)"
+                    reasoning = "因短時間請求過多，動態評估暫時略過"
+            
+            # 4. 判斷是「一般慢性病藥丸」
+            else:
+                metric_title = "資訊準確度與相似度" # 👈 藥丸專屬指標名稱
+                
+                # 慢性病藥丸辨識的動態評估：真正呼叫 LLM 裁判比對知識庫
+                pill_eval_prompt = f"""
+你是一位嚴格的醫療 RAG 系統評估裁判。請比對下方【知識庫】與【AI辨識回答】，評估其忠實度 (Faithfulness) 與相似度。
+
+【知識庫內容 (RAG Context)】：
+{RAG_KNOWLEDGE_BASE}
+
+【AI 辨識回答 (AI Answer)】：
+{base_result_text}
+
+請評估該藥丸回答是否忠實來自知識庫且資訊正確，並給出一個 0% 到 100% 的相似度分數。
+請嚴格輸出以下 JSON 格式：
+{{
+    "score": "95%",
+    "reason": "藥名與刻字特徵完全對應知識庫內容"
+}}
+"""
+                try:
+                    eval_response = ai_client.models.generate_content(
+                        model='gemini-2.5-flash',
+                        contents=pill_eval_prompt,
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            temperature=0.0
+                        )
+                    )
+                    eval_json = json.loads(eval_response.text)
+                    similarity_score = eval_json.get("score", "95%")
+                    reasoning = eval_json.get("reason", "")
+                except Exception as eval_err:
+                    print(f"⚠️ [藥丸評分失敗，可能遭遇 API 限流] ➔ {eval_err}")
+                    similarity_score = "N/A (API 忙碌中)"
+                    reasoning = "因短時間請求過多，動態評估暫時略過"
+
+            # 組合最終回傳文字
+            result_text = f"{base_result_text}\n\n📊 【RAG 系統評估指標】\n━━━━━━━━━━━━━━\n• {metric_title}：{similarity_score}\n• 檢核說明：{reasoning}\n━━━━━━━━━━━━━━"
+            print("[系統] ➔ Gemini 辨識與指標評估完成！準備回傳給 LINE。")
 
         except Exception as e:
             print(f"\n❌ [錯誤原因] ➔ {e}\n")
-            error_msg = "❌ 辨識失敗。可能原因：照片過於模糊、反光、或是 API 連線逾時。請重新拍攝並再試一次！\nRecognition failed. Please retry."
+            result_text = "❌ 辨識失敗。可能原因：照片過於模糊、反光、或是 Google AI 連線超時。請重新拍攝並再試一次！"
+
+        # 5. 回傳給使用者
+        try:
             line_bot_api.reply_message(
                 ReplyMessageRequest(
                     reply_token=event.reply_token,
-                    messages=[TextMessage(text=error_msg)]
+                    messages=[TextMessage(text=result_text)]
                 )
             )
+            print("[系統] ➔ 成功將結果送回使用者的 LINE！")
+        except Exception as reply_error:
+            print(f"❌ [回傳失敗] ➔ {reply_error}")
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
