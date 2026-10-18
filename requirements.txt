@@ -3,10 +3,3 @@ line-bot-sdk
 google-genai
 pillow
 gunicorn
-datasets
-ragas
-langchain
-langchain-core
-langchain-community
-langchain-google-vertexai
-openai
