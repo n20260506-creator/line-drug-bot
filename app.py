@@ -661,7 +661,7 @@ def handle_image_message(event):
                         )
                     )
                     eval_json = json.loads(eval_response.text)
-                    similarity_score = eval_json.get("score", "94%")
+                    similarity_score = eval_json.get("score", "N/A")
                     reasoning = eval_json.get("reason", "")
                 except Exception:
                     similarity_score = "N/A"
@@ -684,7 +684,7 @@ def handle_image_message(event):
                         )
                     )
                     eval_json = json.loads(eval_response.text)
-                    similarity_score = eval_json.get("score", "95%")
+                    similarity_score = eval_json.get("score", "N/A")
                     reasoning = eval_json.get("reason", "")
                 except Exception:
                     similarity_score = "N/A"
