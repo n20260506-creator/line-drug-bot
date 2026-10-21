@@ -37,7 +37,7 @@ LANGUAGE_MAP = {
     "id": "Bahasa Indonesia"
 }
 
-# ==================== [輕量多國語言字典 (零 API 消耗、秒速回應、絕不爆 429)] ====================
+# ==================== [輕量多國語言字典 (支援介面與細節欄位標題)] ====================
 UI_TEXTS = {
     "zh": {
         "current_lang": "🌐 目前設定的語言為：繁體中文",
@@ -65,6 +65,8 @@ UI_TEXTS = {
         "pill_btn_cat": "🩺 慢性病分類",
         "pill_btn_usage": "🎯 主要適應症/用途",
         "pill_btn_dose": "⏰ 一般常見用法",
+        "warning_label": "⚠️ 注意事項",
+        "warning_pill_label": "⚠️ 注意事項與警語",
         "no_pending_data": "⚠️ 查無近期辨識資料，請重新上傳照片。",
         "timer_set": "⏰ 好的！已為您設定提醒。",
         "timer_push": "🔔 提醒您該吃藥囉！",
@@ -96,6 +98,8 @@ UI_TEXTS = {
         "pill_btn_cat": "🩺 Chronic Category",
         "pill_btn_usage": "🎯 Indications",
         "pill_btn_dose": "⏰ Common Dosage",
+        "warning_label": "⚠️ Precautions",
+        "warning_pill_label": "⚠️ Precautions & Warnings",
         "no_pending_data": "⚠️ No recent recognition data found. Please upload a photo again.",
         "timer_set": "⏰ Got it! Reminder set.",
         "timer_push": "🔔 Reminder: It's time to take your medication!",
@@ -127,6 +131,8 @@ UI_TEXTS = {
         "pill_btn_cat": "🩺 Kategori Penyakit",
         "pill_btn_usage": "🎯 Indikasi",
         "pill_btn_dose": "⏰ Dosis Umum",
+        "warning_label": "⚠️ Perhatian",
+        "warning_pill_label": "⚠️ Perhatian & Peringatan",
         "no_pending_data": "⚠️ Data tidak ditemukan. Silakan unggah foto obat kembali.",
         "timer_set": "⏰ Pengingat diatur.",
         "timer_push": "🔔 Pengingat: Saatnya minum obat Anda!",
@@ -135,7 +141,7 @@ UI_TEXTS = {
 }
 
 app = Flask(__name__)
-DB_NAME = "pharmacy.db"
+DB_NAME = os.environ.get("DB_PATH", "pharmacy.db")
 
 # ==================== [SQLite 資料庫持久化模組] ====================
 def init_db():
@@ -164,7 +170,7 @@ def init_db():
     ''')
     conn.commit()
     conn.close()
-    print("[資料庫] ➔ SQLite 資料庫與所有資料表初始化完成！")
+    print(f"[資料庫] ➔ 成功連線並初始化資料庫路徑: {DB_NAME}")
 
 init_db()
 
@@ -201,17 +207,30 @@ def get_user_recognition(user_id):
 def log_medication_time(user_id):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute('INSERT INTO user_medication_logs (user_id) VALUES (?)', (user_id,))
+    # 💡 強制加上 8 小時，對齊台灣時區 (UTC+8)
+    tw_time = (datetime.now() + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")
+    
+    if DATABASE_URL: # 如果未來改用雲端資料庫
+        cursor.execute('INSERT INTO user_medication_logs (user_id, logged_at) VALUES (%s, %s)', (user_id, tw_time))
+    else: # 目前本機 SQLite
+        cursor.execute('INSERT INTO user_medication_logs (user_id, logged_at) VALUES (?, ?)', (user_id, tw_time))
+        
     conn.commit()
+    cursor.close()
     conn.close()
 
 def get_medication_logs(user_id, days):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+    # 💡 以台灣時區當前時間為基準點往前計算天數
+    tw_now = datetime.now() + timedelta(hours=8)
+    start_date = (tw_now - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+    
     cursor.execute('SELECT logged_at FROM user_medication_logs WHERE user_id = ? AND logged_at >= ? ORDER BY logged_at DESC', (user_id, start_date))
     rows = cursor.fetchall()
+    cursor.close()
     conn.close()
+    return [row[0] for row in rows]
     return [row[0] for row in rows]
 
 # ==================== [RAG 慢性病知識庫預載] ====================
@@ -339,32 +358,32 @@ def handle_postback(event):
                     warning_info = extract_section(stored_data, "注意事項")
                     if view_type == "name":
                         val = extract_section(stored_data, "藥品名稱")
-                        reply_msg = f"🏷️ 【{txts['bag_btn_name']}】：\n{val}\n\n⚠️ 【注意事項】：\n{warning_info}"
+                        reply_msg = f"🏷️ 【{txts['bag_btn_name']}】：\n{val}\n\n{txts['warning_label']}：\n{warning_info}"
                     elif view_type == "usage":
                         val = extract_section(stored_data, "適應症/用途")
-                        reply_msg = f"🎯 【{txts['bag_btn_usage']}】：\n{val}\n\n⚠️ 【注意事項】：\n{warning_info}"
+                        reply_msg = f"🎯 【{txts['bag_btn_usage']}】：\n{val}\n\n{txts['warning_label']}：\n{warning_info}"
                     elif view_type == "dose":
                         val = extract_section(stored_data, "用法用量")
-                        reply_msg = f"⏰ 【{txts['bag_btn_dose']}】：\n{val}\n\n⚠️ 【注意事項】：\n{warning_info}"
+                        reply_msg = f"⏰ 【{txts['bag_btn_dose']}】：\n{val}\n\n{txts['warning_label']}：\n{warning_info}"
                     elif view_type == "side_effect":
                         val = extract_section(stored_data, "副作用")
-                        reply_msg = f"🧪 【{txts['bag_btn_side']}】：\n{val}\n\n⚠️ 【注意事項】：\n{warning_info}"
+                        reply_msg = f"🧪 【{txts['bag_btn_side']}】：\n{val}\n\n{txts['warning_label']}：\n{warning_info}"
                     else:
                         reply_msg = stored_data
                 else: # view_pill
                     warning_info = extract_section(stored_data, "服用注意事項與警語")
                     if view_type == "name":
                         val = extract_section(stored_data, "可能藥品名稱")
-                        reply_msg = f"🏷️ 【{txts['pill_btn_name']}】：\n{val}\n\n⚠️ 【注意事項與警語】：\n{warning_info}"
+                        reply_msg = f"🏷️ 【{txts['pill_btn_name']}】：\n{val}\n\n{txts['warning_pill_label']}：\n{warning_info}"
                     elif view_type == "category":
                         val = extract_section(stored_data, "慢性病分類")
-                        reply_msg = f"🩺 【{txts['pill_btn_cat']}】：\n{val}\n\n⚠️ 【注意事項與警語】：\n{warning_info}"
+                        reply_msg = f"🩺 【{txts['pill_btn_cat']}】：\n{val}\n\n{txts['warning_pill_label']}：\n{warning_info}"
                     elif view_type == "usage":
                         val = extract_section(stored_data, "主要適應症/用途")
-                        reply_msg = f"🎯 【{txts['pill_btn_usage']}】：\n{val}\n\n⚠️ 【注意事項與警語】：\n{warning_info}"
+                        reply_msg = f"🎯 【{txts['pill_btn_usage']}】：\n{val}\n\n{txts['warning_pill_label']}：\n{warning_info}"
                     elif view_type == "dose":
                         val = extract_section(stored_data, "一般常見用法")
-                        reply_msg = f"⏰ 【{txts['pill_btn_dose']}】：\n{val}\n\n⚠️ 【注意事項與警語】：\n{warning_info}"
+                        reply_msg = f"⏰ 【{txts['pill_btn_dose']}】：\n{val}\n\n{txts['warning_pill_label']}：\n{warning_info}"
                     else:
                         reply_msg = stored_data
 
