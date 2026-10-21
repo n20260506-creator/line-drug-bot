@@ -37,6 +37,103 @@ LANGUAGE_MAP = {
     "id": "Bahasa Indonesia"
 }
 
+# ==================== [輕量多國語言字典 (零 API 消耗、秒速回應、絕不爆 429)] ====================
+UI_TEXTS = {
+    "zh": {
+        "current_lang": "🌐 目前設定的語言為：繁體中文",
+        "select_lang_title": "請選擇語言 / Select Language",
+        "select_lang_text": "請選擇藥物資訊與介面的顯示語言：",
+        "lang_set_success": "🌐 語言已成功設定為：繁體中文",
+        "med_logged": "🎉 太好了！已為您紀錄吃藥時間：",
+        "select_range_title": "📊 選擇用藥記錄查詢範圍",
+        "select_range_text": "請點選您想查詢的時間區間：",
+        "range_7": "📅 最近 7 天",
+        "range_15": "📅 最近 15 天",
+        "range_30": "📅 最近 30 天",
+        "no_med_records": "ℹ️ 在指定的區間內查無任何吃藥紀錄。",
+        "med_record_title": "📋 用藥紀錄查詢結果",
+        "med_record_count": "總計服藥次數：",
+        "bag_menu_title": "📋 藥袋資訊細節查詢",
+        "bag_menu_text": "請點選下方按鈕查看特定項目：",
+        "bag_btn_name": "🏷️ 藥品名稱",
+        "bag_btn_usage": "🎯 適應症/用途",
+        "bag_btn_dose": "⏰ 用法用量",
+        "bag_btn_side": "🧪 副作用",
+        "pill_menu_title": "💊 藥丸資訊細節查詢",
+        "pill_menu_text": "請點選下方按鈕查看特定項目：",
+        "pill_btn_name": "🏷️ 可能藥品名稱",
+        "pill_btn_cat": "🩺 慢性病分類",
+        "pill_btn_usage": "🎯 主要適應症/用途",
+        "pill_btn_dose": "⏰ 一般常見用法",
+        "no_pending_data": "⚠️ 查無近期辨識資料，請重新上傳照片。",
+        "timer_set": "⏰ 好的！已為您設定提醒。",
+        "timer_push": "🔔 提醒您該吃藥囉！",
+        "fail_msg": "❌ 辨識失敗。可能原因：照片過於模糊、反光、或是連線逾時。請重新拍攝並再試一次！"
+    },
+    "en": {
+        "current_lang": "🌐 Current language setting: English",
+        "select_lang_title": "Select Language",
+        "select_lang_text": "Please select your preferred language:",
+        "lang_set_success": "🌐 Language successfully set to: English",
+        "med_logged": "🎉 Great! Medication time recorded: ",
+        "select_range_title": "📊 Medication History Range",
+        "select_range_text": "Please select the timeframe to query:",
+        "range_7": "📅 Last 7 Days",
+        "range_15": "📅 Last 15 Days",
+        "range_30": "📅 Last 30 Days",
+        "no_med_records": "ℹ️ No medication records found for the selected timeframe.",
+        "med_record_title": "📋 Medication History",
+        "med_record_count": "Total doses taken: ",
+        "bag_menu_title": "📋 Drug Bag Details",
+        "bag_menu_text": "Select an item to view details:",
+        "bag_btn_name": "🏷️ Drug Name",
+        "bag_btn_usage": "🎯 Indications",
+        "bag_btn_dose": "⏰ Dosage",
+        "bag_btn_side": "🧪 Side Effects",
+        "pill_menu_title": "💊 Pill Details",
+        "pill_menu_text": "Select an item to view details:",
+        "pill_btn_name": "🏷️ Possible Name",
+        "pill_btn_cat": "🩺 Chronic Category",
+        "pill_btn_usage": "🎯 Indications",
+        "pill_btn_dose": "⏰ Common Dosage",
+        "no_pending_data": "⚠️ No recent recognition data found. Please upload a photo again.",
+        "timer_set": "⏰ Got it! Reminder set.",
+        "timer_push": "🔔 Reminder: It's time to take your medication!",
+        "fail_msg": "❌ Recognition failed. Please retake the photo and try again!"
+    },
+    "id": {
+        "current_lang": "🌐 Pengaturan bahasa saat ini: Bahasa Indonesia",
+        "select_lang_title": "Pilih Bahasa",
+        "select_lang_text": "Silakan pilih bahasa pilihan Anda:",
+        "lang_set_success": "🌐 Bahasa berhasil diubah ke: Bahasa Indonesia",
+        "med_logged": "🎉 Bagus! Waktu minum obat berhasil dicatat: ",
+        "select_range_title": "📊 Pilih Rentang Riwayat Obat",
+        "select_range_text": "Pilih rentang waktu yang ingin Anda lihat:",
+        "range_7": "📅 7 Hari Terakhir",
+        "range_15": "📅 15 Hari Terakhir",
+        "range_30": "📅 30 Hari Terakhir",
+        "no_med_records": "ℹ️ Tidak ada catatan minum obat dalam rentang waktu ini.",
+        "med_record_title": "📋 Riwayat Minum Obat",
+        "med_record_count": "Total minum obat: ",
+        "bag_menu_title": "📋 Detail Kantong Obat",
+        "bag_menu_text": "Pilih item untuk melihat detail:",
+        "bag_btn_name": "🏷️ Nama Obat",
+        "bag_btn_usage": "🎯 Indikasi",
+        "bag_btn_dose": "⏰ Dosis",
+        "bag_btn_side": "🧪 Efek Samping",
+        "pill_menu_title": "💊 Detail Pil Obat",
+        "pill_menu_text": "Pilih item untuk melihat detail:",
+        "pill_btn_name": "🏷️ Nama Obat",
+        "pill_btn_cat": "🩺 Kategori Penyakit",
+        "pill_btn_usage": "🎯 Indikasi",
+        "pill_btn_dose": "⏰ Dosis Umum",
+        "no_pending_data": "⚠️ Data tidak ditemukan. Silakan unggah foto obat kembali.",
+        "timer_set": "⏰ Pengingat diatur.",
+        "timer_push": "🔔 Pengingat: Saatnya minum obat Anda!",
+        "fail_msg": "❌ Gagal mengenali. Silakan ambil foto ulang dan coba lagi!"
+    }
+}
+
 app = Flask(__name__)
 DB_NAME = "pharmacy.db"
 
@@ -117,23 +214,6 @@ def get_medication_logs(user_id, days):
     conn.close()
     return [row[0] for row in rows]
 
-# ==================== [Gemini 動態翻譯輔助函式 (取代死板字典)] ====================
-def translate_text(text, target_lang_code):
-    """當使用者選擇非中文時，即時透過 Gemini 將文字翻譯成目標語言"""
-    if target_lang_code == "zh" or not text:
-        return text
-    target_lang_name = LANGUAGE_MAP.get(target_lang_code, "English")
-    try:
-        response = ai_client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=f"請將以下醫療/藥事說明精準翻譯成「{target_lang_name}」，保持專業且易懂，切勿自行增加原文沒有的內容：\n\n{text}",
-            config=types.GenerateContentConfig(temperature=0.0)
-        )
-        return response.text.strip()
-    except Exception as e:
-        print(f"❌ [動態翻譯失敗] ➔ {e}")
-        return text
-
 # ==================== [RAG 慢性病知識庫預載] ====================
 RAG_KNOWLEDGE_BASE = ""
 TXT_PATH = "drug_guide.txt"
@@ -179,22 +259,21 @@ def extract_section(text, keyword):
 
 def send_delay_reminder(user_id):
     lang = get_user_language(user_id)
-    msg = translate_text("🔔 提醒您該吃藥囉！", lang)
+    txts = UI_TEXTS.get(lang, UI_TEXTS["zh"])
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
         try:
-            line_bot_api.push_message(PushMessageRequest(to=user_id, messages=[TextMessage(text=msg)]))
+            line_bot_api.push_message(PushMessageRequest(to=user_id, messages=[TextMessage(text=txts["timer_push"])]))
         except Exception as e:
             print(f"❌ [提醒發送失敗] ➔ {e}")
 
 def get_language_selection_template(lang):
-    title = translate_text("請選擇語言 / Select Language", lang)
-    text = translate_text("請選擇藥物資訊與介面的顯示語言：", lang)
+    txts = UI_TEXTS.get(lang, UI_TEXTS["zh"])
     return TemplateMessage(
-        alt_text=title,
+        alt_text=txts["select_lang_title"],
         template=ButtonsTemplate(
-            title=title,
-            text=text,
+            title=txts["select_lang_title"],
+            text=txts["select_lang_text"],
             actions=[
                 PostbackAction(label="繁體中文", data="lang=zh"),
                 PostbackAction(label="English", data="lang=en"),
@@ -226,6 +305,7 @@ def handle_postback(event):
     data = event.postback.data
     user_id = event.source.user_id
     lang = get_user_language(user_id)
+    txts = UI_TEXTS.get(lang, UI_TEXTS["zh"])
     
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
@@ -233,18 +313,17 @@ def handle_postback(event):
         if data.startswith("lang="):
             lang_code = data.split("=")[1]
             save_user_language(user_id, lang_code)
-            success_msg = translate_text(f"🌐 語言已成功設定為：{LANGUAGE_MAP.get(lang_code)}", lang_code)
-            line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=success_msg)]))
+            new_txts = UI_TEXTS.get(lang_code, UI_TEXTS["zh"])
+            line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=new_txts["lang_set_success"])]))
 
         elif data.startswith("range="):
             days = int(data.split("=")[1])
             logs = get_medication_logs(user_id, days)
             if not logs:
-                reply_text = translate_text(f"ℹ️ 在最近 {days} 天內查無任何吃藥紀錄。", lang)
+                reply_text = txts["no_med_records"]
             else:
                 formatted_logs = "\n".join([f"• {log}" for log in logs])
-                raw_summary = f"📊 【用藥紀錄 ({days} 天)】\n總計服藥次數：{len(logs)} 次\n\n詳細時間：\n{formatted_logs}"
-                reply_text = translate_text(raw_summary, lang)
+                reply_text = f"📊 【{txts['med_record_title']} ({days} 天)】\n━━━━━━━━━━━━━━\n{txts['med_record_count']}{len(logs)} 次\n\n【詳細紀錄 / Details】：\n{formatted_logs}\n━━━━━━━━━━━━━━"
 
             line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=reply_text)]))
 
@@ -254,43 +333,40 @@ def handle_postback(event):
             stored_data = get_user_recognition(user_id)
 
             if not stored_data:
-                reply_msg = translate_text("⚠️ 查無近期辨識資料，請重新上傳照片。", lang)
+                reply_msg = txts["no_pending_data"]
             else:
                 if "view_bag" in parts[0]:
                     warning_info = extract_section(stored_data, "注意事項")
                     if view_type == "name":
                         val = extract_section(stored_data, "藥品名稱")
-                        raw_msg = f"🏷️ 【藥品名稱】：\n{val}\n\n⚠️ 【注意事項】：\n{warning_info}"
+                        reply_msg = f"🏷️ 【{txts['bag_btn_name']}】：\n{val}\n\n⚠️ 【注意事項】：\n{warning_info}"
                     elif view_type == "usage":
                         val = extract_section(stored_data, "適應症/用途")
-                        raw_msg = f"🎯 【適應症/用途】：\n{val}\n\n⚠️ 【注意事項】：\n{warning_info}"
+                        reply_msg = f"🎯 【{txts['bag_btn_usage']}】：\n{val}\n\n⚠️ 【注意事項】：\n{warning_info}"
                     elif view_type == "dose":
                         val = extract_section(stored_data, "用法用量")
-                        raw_msg = f"⏰ 【用法用量】：\n{val}\n\n⚠️ 【注意事項】：\n{warning_info}"
+                        reply_msg = f"⏰ 【{txts['bag_btn_dose']}】：\n{val}\n\n⚠️ 【注意事項】：\n{warning_info}"
                     elif view_type == "side_effect":
                         val = extract_section(stored_data, "副作用")
-                        raw_msg = f"🧪 【副作用】：\n{val}\n\n⚠️ 【注意事項】：\n{warning_info}"
+                        reply_msg = f"🧪 【{txts['bag_btn_side']}】：\n{val}\n\n⚠️ 【注意事項】：\n{warning_info}"
                     else:
-                        raw_msg = stored_data
+                        reply_msg = stored_data
                 else: # view_pill
                     warning_info = extract_section(stored_data, "服用注意事項與警語")
                     if view_type == "name":
                         val = extract_section(stored_data, "可能藥品名稱")
-                        raw_msg = f"🏷️ 【可能藥品名稱】：\n{val}\n\n⚠️ 【注意事項與警語】：\n{warning_info}"
+                        reply_msg = f"🏷️ 【{txts['pill_btn_name']}】：\n{val}\n\n⚠️ 【注意事項與警語】：\n{warning_info}"
                     elif view_type == "category":
                         val = extract_section(stored_data, "慢性病分類")
-                        raw_msg = f"🩺 【慢性病分類】：\n{val}\n\n⚠️ 【注意事項與警語】：\n{warning_info}"
+                        reply_msg = f"🩺 【{txts['pill_btn_cat']}】：\n{val}\n\n⚠️ 【注意事項與警語】：\n{warning_info}"
                     elif view_type == "usage":
                         val = extract_section(stored_data, "主要適應症/用途")
-                        raw_msg = f"🎯 【主要適應症/用途】：\n{val}\n\n⚠️ 【注意事項與警語】：\n{warning_info}"
+                        reply_msg = f"🎯 【{txts['pill_btn_usage']}】：\n{val}\n\n⚠️ 【注意事項與警語】：\n{warning_info}"
                     elif view_type == "dose":
                         val = extract_section(stored_data, "一般常見用法")
-                        raw_msg = f"⏰ 【一般常見用法】：\n{val}\n\n⚠️ 【注意事項與警語】：\n{warning_info}"
+                        reply_msg = f"⏰ 【{txts['pill_btn_dose']}】：\n{val}\n\n⚠️ 【注意事項與警語】：\n{warning_info}"
                     else:
-                        raw_msg = stored_data
-
-                # 💡 自動動態翻譯成使用者選定的語言
-                reply_msg = translate_text(raw_msg, lang)
+                        reply_msg = stored_data
 
             line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=reply_msg)]))
 
@@ -299,34 +375,27 @@ def handle_text_message(event):
     user_message = event.message.text.strip()
     user_id = event.source.user_id
     lang = get_user_language(user_id)
+    txts = UI_TEXTS.get(lang, UI_TEXTS["zh"])
 
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
 
-        # 支援多國語言關鍵字接收圖文選單點擊
         if user_message in ["我吃藥了", "I took my medicine", "Saya sudah minum obat"]:
             log_medication_time(user_id)
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            raw_msg = f"🎉 太好了！已為您紀錄吃藥時間：\n⏱️ {current_time}"
-            reply_text = translate_text(raw_msg, lang)
+            reply_text = f"{txts['med_logged']}\n⏱️ {current_time}"
             line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=reply_text)]))
 
         elif user_message in ["查看用藥紀錄", "用藥紀錄", "Medication History", "Riwayat Pengobatan"]:
-            title_txt = translate_text("📊 選擇用藥記錄查詢範圍", lang)
-            desc_txt = translate_text("請點選您想查詢的時間區間：", lang)
-            r7 = translate_text("📅 最近 7 天", lang)
-            r15 = translate_text("📅 最近 15 天", lang)
-            r30 = translate_text("📅 最近 30 天", lang)
-
             range_menu = TemplateMessage(
-                alt_text=title_txt,
+                alt_text=txts["select_range_title"],
                 template=ButtonsTemplate(
-                    title=title_txt,
-                    text=desc_txt,
+                    title=txts["select_range_title"],
+                    text=txts["select_range_text"],
                     actions=[
-                        PostbackAction(label=r7, data="range=7"),
-                        PostbackAction(label=r15, data="range=15"),
-                        PostbackAction(label=r30, data="range=30")
+                        PostbackAction(label=txts["range_7"], data="range=7"),
+                        PostbackAction(label=txts["range_15"], data="range=15"),
+                        PostbackAction(label=txts["range_30"], data="range=30")
                     ]
                 )
             )
@@ -334,8 +403,7 @@ def handle_text_message(event):
 
         elif user_message in ["語言翻譯", "語言設定", "重新選擇語言", "Language Settings", "Pengaturan Bahasa"]:
             current_lang_name = LANGUAGE_MAP.get(lang, "繁體中文")
-            info_text = translate_text(f"🌐 目前設定的語言為：{current_lang_name}", lang)
-            info_msg = TextMessage(text=info_text)
+            info_msg = TextMessage(text=f"{txts['current_lang']}")
             select_menu = get_language_selection_template(lang)
             line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[info_msg, select_menu]))
 
@@ -346,8 +414,7 @@ def handle_text_message(event):
             if user_message in timer_options:
                 delay = timer_options[user_message]
                 try:
-                    conf_msg = translate_text(f"⏰ 好的！已為您設定提醒。", lang)
-                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=conf_msg)]))
+                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=txts["timer_set"])]))
                     threading.Timer(delay, send_delay_reminder, args=[user_id]).start()
                 except Exception as e:
                     print(f"❌ [提醒失敗] ➔ {e}")
@@ -360,6 +427,8 @@ def handle_image_message(event):
         
         user_id = event.source.user_id
         lang = get_user_language(user_id)
+        txts = UI_TEXTS.get(lang, UI_TEXTS["zh"])
+        base_result_text = ""
 
         try:
             message_id = event.message.id
@@ -399,7 +468,7 @@ def handle_image_message(event):
             base_result_text = response.text.strip()
             save_user_recognition(user_id, base_result_text)
 
-            # ==================== [真正客觀動態計算的 RAG 評估邏輯 (移除固定的幾何示範分數)] ====================
+            # ==================== [客觀動態計算的 RAG 評估邏輯] ====================
             similarity_score = "N/A"
             reasoning = "動態檢核中"
             metric_title = "•系統解析完整度"
@@ -411,10 +480,9 @@ def handle_image_message(event):
             else:
                 eval_prompt = f"""
 你是一位極度嚴格且客觀的醫療 RAG 系統評估裁判。請依據以下內容【真實計算】其語意對應與忠實度：
-【知識庫或原始圖檔內容對照】
 【AI 辨識回答】：{base_result_text}
 
-請勿預設立場或套用固定分數，請依據實際準確度計算 0% 到 100% 之間的真實相似度分數，並給予具體理由。
+請依據實際準確度計算 0% 到 100% 之間的真實相似度分數，並給予具體理由。
 請嚴格輸出 JSON 格式：{{"score": "真實算出的百分比%", "reason": "客觀評語"}}
 """
                 try:
@@ -435,48 +503,35 @@ def handle_image_message(event):
             result_text = f"{base_result_text}\n\n📊 【RAG 系統評估指標】\n━━━━━━━━━━━━━━\n• {metric_title}：{similarity_score}\n• 檢核說明：{reasoning}\n━━━━━━━━━━━━━━"
 
         except Exception as e:
-            result_text = translate_text("❌ 辨識失敗。請重新拍攝並再試一次！", lang)
+            print(f"❌ 辨識過程錯誤: {e}")
+            result_text = txts["fail_msg"]
 
         try:
             messages_to_send = [TextMessage(text=result_text)]
-            if "此藥丸非慢性病用藥，無法偵測" not in base_result_text and "❌ 辨識失敗" not in result_text:
+            if base_result_text and "此藥丸非慢性病用藥，無法偵測" not in base_result_text and "❌ 辨識失敗" not in result_text:
                 if "📋 【藥袋辨識結果】" in base_result_text:
-                    b_title = translate_text("📋 藥袋資訊細節查詢", lang)
-                    b_text = translate_text("請點選下方按鈕查看特定項目：", lang)
-                    btn1 = translate_text("🏷️ 藥品名稱", lang)
-                    btn2 = translate_text("🎯 適應症/用途", lang)
-                    btn3 = translate_text("⏰ 用法用量", lang)
-                    btn4 = translate_text("🧪 副作用", lang)
-                    
                     menu_template = TemplateMessage(
-                        alt_text=b_title,
+                        alt_text=txts["bag_menu_title"],
                         template=ButtonsTemplate(
-                            title=b_title, text=b_text,
+                            title=txts["bag_menu_title"], text=txts["bag_menu_text"],
                             actions=[
-                                PostbackAction(label=btn1, data="view_bag=name"),
-                                PostbackAction(label=btn2, data="view_bag=usage"),
-                                PostbackAction(label=btn3, data="view_bag=dose"),
-                                PostbackAction(label=btn4, data="view_bag=side_effect")
+                                PostbackAction(label=txts["bag_btn_name"], data="view_bag=name"),
+                                PostbackAction(label=txts["bag_btn_usage"], data="view_bag=usage"),
+                                PostbackAction(label=txts["bag_btn_dose"], data="view_bag=dose"),
+                                PostbackAction(label=txts["bag_btn_side"], data="view_bag=side_effect")
                             ]
                         )
                     )
                 else:
-                    p_title = translate_text("💊 藥丸資訊細節查詢", lang)
-                    p_text = translate_text("請點選下方按鈕查看特定項目：", lang)
-                    pbtn1 = translate_text("🏷️ 可能藥品名稱", lang)
-                    pbtn2 = translate_text("🩺 慢性病分類", lang)
-                    pbtn3 = translate_text("🎯 主要適應症/用途", lang)
-                    pbtn4 = translate_text("⏰ 一般常見用法", lang)
-
                     menu_template = TemplateMessage(
-                        alt_text=p_title,
+                        alt_text=txts["pill_menu_title"],
                         template=ButtonsTemplate(
-                            title=p_title, text=p_text,
+                            title=txts["pill_menu_title"], text=txts["pill_menu_text"],
                             actions=[
-                                PostbackAction(label=pbtn1, data="view_pill=name"),
-                                PostbackAction(label=pbtn2, data="view_pill=category"),
-                                PostbackAction(label=pbtn3, data="view_pill=usage"),
-                                PostbackAction(label=pbtn4, data="view_pill=dose")
+                                PostbackAction(label=txts["pill_btn_name"], data="view_pill=name"),
+                                PostbackAction(label=txts["pill_btn_cat"], data="view_pill=category"),
+                                PostbackAction(label=txts["pill_btn_usage"], data="view_pill=usage"),
+                                PostbackAction(label=txts["pill_btn_dose"], data="view_pill=dose")
                             ]
                         )
                     )
