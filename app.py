@@ -421,9 +421,9 @@ def handle_text_message(event):
                 )
             return
 
-        # 3. 處理「7天內 / 1個月內 / 2個月內用藥紀錄」查詢
+        # 3. 處理「7日內 / 1個月內 / 2個月內用藥紀錄」查詢
         query_days_map = {
-            "7天內用藥紀錄": {"days": 7, "title": "7天內"},
+            "7日內用藥紀錄": {"days": 7, "title": "7日內"},
             "1個月內用藥紀錄": {"days": 30, "title": "1個月內"},
             "2個月內用藥紀錄": {"days": 60, "title": "2個月內"}
         }
@@ -479,70 +479,7 @@ def handle_text_message(event):
                     )
                 )
             return
-        # === 2. 處理 7天 / 1個月 / 2個月 用藥紀錄查詢 ===
-        query_days_map = {
-            "7天內用藥紀錄": {"days": 7, "title": "7天內"},
-            "1個月內用藥紀錄": {"days": 30, "title": "1個月內"},
-            "2個月內用藥紀錄": {"days": 60, "title": "2個月內"}
-        }
-
-        if user_message in query_days_map:
-            client = get_sheets_client()
-            if not client:
-                line_bot_api.reply_message(
-                    ReplyMessageRequest(
-                        reply_token=event.reply_token,
-                        messages=[TextMessage(text="❌ 試算表連線失敗，請檢查系統金鑰設定。")]
-                    )
-                )
-                return
-
-            try:
-                days_limit = query_days_map[user_message]["days"]
-                period_title = query_days_map[user_message]["title"]
-
-                # 計算篩選基準時間（台灣時間）
-                tz_taiwan = timezone(timedelta(hours=8))
-                now = datetime.now(tz_taiwan)
-                cutoff_date = now - timedelta(days=days_limit)
-
-                # 讀取試算表資料
-                all_records = client.get_all_values()
-                user_logs = []
-
-                # 跳過第 1 列標題，篩選該使用者的紀錄
-                for row in all_records[1:]:
-                    if len(row) >= 2 and row[1] == user_id:
-                        record_time_str = row[0]
-                        try:
-                            record_time = datetime.strptime(record_time_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz_taiwan)
-                            # 判斷是否在指定天數內
-                            if record_time >= cutoff_date:
-                                status = row[2] if len(row) > 2 else "已服藥"
-                                user_logs.append({"time": record_time_str, "status": status})
-                        except ValueError:
-                            continue
-
-                # 由新到舊倒序排序（最新的在最上面），最多取 10 筆
-                recent_logs = user_logs[::-1][:10]
-
-                # 回傳對應天數的 Flex Message 卡片
-                flex_msg = build_history_flex(recent_logs, period_title)
-                line_bot_api.reply_message(
-                    ReplyMessageRequest(
-                        reply_token=event.reply_token,
-                        messages=[flex_msg]
-                    )
-                )
-            except Exception as err:
-                print(f"❌ [查詢試算表失敗] ➔ {err}")
-                line_bot_api.reply_message(
-                    ReplyMessageRequest(
-                        reply_token=event.reply_token,
-                        messages=[TextMessage(text="❌ 查詢失敗，請稍後再試。")]
-                    )
-                )
-            return
+            
 @handler.add(MessageEvent, message=ImageMessageContent)
 def handle_image_message(event):
     with ApiClient(configuration) as api_client:
