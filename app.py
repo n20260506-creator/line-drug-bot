@@ -5,6 +5,7 @@ import json
 import threading
 from flask import Flask, request, abort
 from PIL import Image
+from datetime import datetime, timezone, timedelta
 
 # 引入 LINE SDK
 from linebot.v3 import WebhookHandler
@@ -19,7 +20,9 @@ from linebot.v3.messaging import (
     TextMessage,
     TemplateMessage,
     ButtonsTemplate,
-    PostbackAction
+    PostbackAction,
+    FlexMessage,
+    FlexContainer
 )
 from linebot.v3.webhooks import (
     MessageEvent, ImageMessageContent, FollowEvent, PostbackEvent, TextMessageContent
@@ -28,6 +31,9 @@ from linebot.v3.webhooks import (
 # 引入 Google 最新官方 GenAI 套件
 from google import genai
 from google.genai import types
+# 引入 Google Sheets 操作套件
+import gspread
+from google.oauth2.service_account import Credentials
 
 # --- 語言與暫存設定功能 ---
 user_language_prefs = {} 
@@ -41,6 +47,36 @@ LANGUAGE_MAP = {
 
 app = Flask(__name__)
 
+# ==================== [Google 試算表連線設定] ====================
+SHEET_NAME = "MedicationLog"
+sheet_client = None
+
+def get_sheets_client():
+    global sheet_client
+    if sheet_client:
+        return sheet_client
+    try:
+        creds_json = os.environ.get('GOOGLE_SHEETS_CREDENTIALS')
+        if not creds_json:
+            print("[Sheets系統] ⚠️ 找不到 GOOGLE_SHEETS_CREDENTIALS 環境變數。")
+            return None
+        
+        creds_dict = json.loads(creds_json)
+        scopes = [
+            'https://www.googleapis.com/auth/spreadsheets',
+            'https://www.googleapis.com/auth/drive'
+        ]
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+        client = gspread.authorize(creds)
+        sheet_client = client.open(SHEET_NAME).sheet1
+        print("[Sheets系統] ➔ 成功連線至 Google 試算表！")
+        return sheet_client
+    except Exception as e:
+        print(f"[Sheets系統] ❌ 連線失敗: {e}")
+        return None
+
+# 初始化嘗試連線一次
+get_sheets_client()
 # ==================== [RAG 慢性病知識庫預載 (純文字檔)] ====================
 RAG_KNOWLEDGE_BASE = ""
 TXT_PATH = "drug_guide.txt"
@@ -158,7 +194,64 @@ def send_delay_reminder(user_id):
             )
         except Exception as e:
             print(f"❌ [提醒發送失敗] ➔ {e}")
+# ==================== [Flex Message 歷史紀錄卡片生成器] ====================
+def build_history_flex(records, period_title):
+    """依照查詢區間（7天 / 1個月 / 2個月）生成專屬歷史紀錄卡片"""
+    if not records:
+        rows_contents = [{
+            "type": "text",
+            "text": f"這段期間（{period_title}）尚無任何用藥紀錄！",
+            "color": "#6B7280",
+            "size": "sm",
+            "align": "center"
+        }]
+    else:
+        rows_contents = []
+        for r in records:
+            rows_contents.append({
+                "type": "box",
+                "layout": "horizontal",
+                "margin": "sm",
+                "contents": [
+                    {"type": "text", "text": "💊", "flex": 0, "size": "sm"},
+                    {"type": "text", "text": r["time"], "size": "sm", "weight": "bold", "color": "#1F2937", "flex": 3},
+                    {"type": "text", "text": r["status"], "size": "xs", "color": "#059669", "align": "end", "flex": 1}
+                ]
+            })
 
+    bubble_json = {
+        "type": "bubble",
+        "header": {
+            "type": "box",
+            "layout": "vertical",
+            "backgroundColor": "#2563EB",
+            "paddingAll": "18px",
+            "contents": [
+                {
+                    "type": "text",
+                    "text": f"📋 【{period_title}】用藥紀錄",
+                    "weight": "bold",
+                    "color": "#FFFFFF",
+                    "size": "lg"
+                },
+                {
+                    "type": "text",
+                    "text": f"共計查詢到 {len(records)} 筆服藥打卡",
+                    "color": "#BFDBFE",
+                    "size": "xs",
+                    "margin": "xs"
+                }
+            ]
+        },
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "spacing": "sm",
+            "contents": rows_contents
+        }
+    }
+    return FlexMessage(alt_text=f"{period_title}用藥紀錄", contents=FlexContainer.from_dict(bubble_json))
+    
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers.get('X-Line-Signature', '')
@@ -277,6 +370,8 @@ def handle_text_message(event):
     
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
+
+        # 1. 處理吃藥定時器
         if user_message in timer_options:
             selected_option = timer_options[user_message]
             delay_seconds = selected_option["seconds"]
@@ -291,7 +386,163 @@ def handle_text_message(event):
                 threading.Timer(delay_seconds, send_delay_reminder, args=[user_id]).start()
             except Exception as reply_error:
                 print(f"❌ [發送即時確認失敗] ➔ {reply_error}")
+            return  # 只有在符合定時提醒時才 return
 
+        # 2. 處理「我吃藥了」打卡
+        if user_message == "我吃藥了":
+            client = get_sheets_client()
+            if not client:
+                line_bot_api.reply_message(
+                    ReplyMessageRequest(
+                        reply_token=event.reply_token,
+                        messages=[TextMessage(text="❌ 試算表連線失敗，請檢查系統金鑰設定。")]
+                    )
+                )
+                return
+
+            try:
+                tz_taiwan = timezone(timedelta(hours=8))
+                now_str = datetime.now(tz_taiwan).strftime("%Y-%m-%d %H:%M:%S")
+                client.append_row([now_str, user_id, "已服藥"])
+                
+                line_bot_api.reply_message(
+                    ReplyMessageRequest(
+                        reply_token=event.reply_token,
+                        messages=[TextMessage(text="太好了!已幫您紀錄吃藥時間")]
+                    )
+                )
+            except Exception as err:
+                print(f"❌ [寫入試算表失敗] ➔ {err}")
+                line_bot_api.reply_message(
+                    ReplyMessageRequest(
+                        reply_token=event.reply_token,
+                        messages=[TextMessage(text="❌ 紀錄失敗，請稍後再試。")]
+                    )
+                )
+            return
+
+        # 3. 處理「7天內 / 1個月內 / 2個月內用藥紀錄」查詢
+        query_days_map = {
+            "7天內用藥紀錄": {"days": 7, "title": "7天內"},
+            "1個月內用藥紀錄": {"days": 30, "title": "1個月內"},
+            "2個月內用藥紀錄": {"days": 60, "title": "2個月內"}
+        }
+
+        if user_message in query_days_map:
+            client = get_sheets_client()
+            if not client:
+                line_bot_api.reply_message(
+                    ReplyMessageRequest(
+                        reply_token=event.reply_token,
+                        messages=[TextMessage(text="❌ 試算表連線失敗，請檢查系統金鑰設定。")]
+                    )
+                )
+                return
+
+            try:
+                days_limit = query_days_map[user_message]["days"]
+                period_title = query_days_map[user_message]["title"]
+
+                tz_taiwan = timezone(timedelta(hours=8))
+                now = datetime.now(tz_taiwan)
+                cutoff_date = now - timedelta(days=days_limit)
+
+                all_records = client.get_all_values()
+                user_logs = []
+
+                for row in all_records[1:]:
+                    if len(row) >= 2 and row[1] == user_id:
+                        record_time_str = row[0]
+                        try:
+                            record_time = datetime.strptime(record_time_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz_taiwan)
+                            if record_time >= cutoff_date:
+                                status = row[2] if len(row) > 2 else "已服藥"
+                                user_logs.append({"time": record_time_str, "status": status})
+                        except ValueError:
+                            continue
+
+                recent_logs = user_logs[::-1][:10]
+
+                flex_msg = build_history_flex(recent_logs, period_title)
+                line_bot_api.reply_message(
+                    ReplyMessageRequest(
+                        reply_token=event.reply_token,
+                        messages=[flex_msg]
+                    )
+                )
+            except Exception as err:
+                print(f"❌ [查詢試算表失敗] ➔ {err}")
+                line_bot_api.reply_message(
+                    ReplyMessageRequest(
+                        reply_token=event.reply_token,
+                        messages=[TextMessage(text="❌ 查詢失敗，請稍後再試。")]
+                    )
+                )
+            return
+        # === 2. 處理 7天 / 1個月 / 2個月 用藥紀錄查詢 ===
+        query_days_map = {
+            "7天內用藥紀錄": {"days": 7, "title": "7天內"},
+            "1個月內用藥紀錄": {"days": 30, "title": "1個月內"},
+            "2個月內用藥紀錄": {"days": 60, "title": "2個月內"}
+        }
+
+        if user_message in query_days_map:
+            client = get_sheets_client()
+            if not client:
+                line_bot_api.reply_message(
+                    ReplyMessageRequest(
+                        reply_token=event.reply_token,
+                        messages=[TextMessage(text="❌ 試算表連線失敗，請檢查系統金鑰設定。")]
+                    )
+                )
+                return
+
+            try:
+                days_limit = query_days_map[user_message]["days"]
+                period_title = query_days_map[user_message]["title"]
+
+                # 計算篩選基準時間（台灣時間）
+                tz_taiwan = timezone(timedelta(hours=8))
+                now = datetime.now(tz_taiwan)
+                cutoff_date = now - timedelta(days=days_limit)
+
+                # 讀取試算表資料
+                all_records = client.get_all_values()
+                user_logs = []
+
+                # 跳過第 1 列標題，篩選該使用者的紀錄
+                for row in all_records[1:]:
+                    if len(row) >= 2 and row[1] == user_id:
+                        record_time_str = row[0]
+                        try:
+                            record_time = datetime.strptime(record_time_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz_taiwan)
+                            # 判斷是否在指定天數內
+                            if record_time >= cutoff_date:
+                                status = row[2] if len(row) > 2 else "已服藥"
+                                user_logs.append({"time": record_time_str, "status": status})
+                        except ValueError:
+                            continue
+
+                # 由新到舊倒序排序（最新的在最上面），最多取 10 筆
+                recent_logs = user_logs[::-1][:10]
+
+                # 回傳對應天數的 Flex Message 卡片
+                flex_msg = build_history_flex(recent_logs, period_title)
+                line_bot_api.reply_message(
+                    ReplyMessageRequest(
+                        reply_token=event.reply_token,
+                        messages=[flex_msg]
+                    )
+                )
+            except Exception as err:
+                print(f"❌ [查詢試算表失敗] ➔ {err}")
+                line_bot_api.reply_message(
+                    ReplyMessageRequest(
+                        reply_token=event.reply_token,
+                        messages=[TextMessage(text="❌ 查詢失敗，請稍後再試。")]
+                    )
+                )
+            return
 @handler.add(MessageEvent, message=ImageMessageContent)
 def handle_image_message(event):
     with ApiClient(configuration) as api_client:
