@@ -283,6 +283,30 @@ def handle_follow(event):
                 )]
             )
         )
+        # 判斷使用者傳送的文字是否為 LINE 選單觸發的「語言翻譯」
+if event.message.text == "語言翻譯":
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        line_bot_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[
+                    TemplateMessage(
+                        alt_text="請選擇您的語言",
+                        template=ButtonsTemplate(
+                            title="請選擇語言 / Select Language",
+                            text="請選擇藥物資訊的顯示語言：",
+                            actions=[
+                                PostbackAction(label="繁體中文", data="lang=zh"),
+                                PostbackAction(label="English", data="lang=en"),
+                                PostbackAction(label="Bahasa Indonesia", data="lang=id")
+                            ]
+                        )
+                    )
+                ]
+            )
+        )
+    return 
 
 @handler.add(PostbackEvent)
 def handle_postback(event):
