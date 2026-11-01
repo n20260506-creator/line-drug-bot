@@ -46,7 +46,7 @@ LANGUAGE_MAP = {
     "id": "Bahasa Indonesia"
 }
 
-# 多國語言 UI 文字對照表
+# 多國語言 UI 文字對照表（已將按鈕 label 嚴格控制在 20 個字元以內，防止 LINE 400 錯誤）
 UI_TEXTS = {
     "zh": {
         "bag_title": "📋 藥袋資訊細節查詢",
@@ -69,41 +69,41 @@ UI_TEXTS = {
         "status_taken": "已服藥"
     },
     "en": {
-        "bag_title": "📋 Medicine Bag Details",
-        "pill_title": "💊 Pill Identification Details",
-        "btn_prompt": "Select an option below to view details:",
+        "bag_title": "📋 Bag Details",
+        "pill_title": "💊 Pill Details",
+        "btn_prompt": "Select an option below:",
         "btn_name": "🏷️ Drug Name",
-        "btn_pill_name": "🏷️ Possible Drug Name",
-        "btn_category": "🩺 Disease Category",
-        "btn_usage": "🎯 Indications/Uses",
-        "btn_pill_usage": "🎯 Main Indications/Uses",
-        "btn_dose": "⏰ Dosage & Usage",
-        "btn_pill_dose": "⏰ Common Dosage",
+        "btn_pill_name": "🏷️ Possible Name",
+        "btn_category": "🩺 Disease Type",
+        "btn_usage": "🎯 Uses",
+        "btn_pill_usage": "🎯 Main Uses",
+        "btn_dose": "⏰ Dosage",
+        "btn_pill_dose": "⏰ Common Dose",
         "btn_side_effect": "🧪 Side Effects",
-        "warning_title": "⚠️ 【Precautions & Warnings】",
-        "history_title": "📋 【{period}】Medication Logs",
+        "warning_title": "⚠️ 【Precautions】",
+        "history_title": "📋 【{period}】Logs",
         "history_subtitle": "Total {count} records found",
-        "history_empty": "No medication records found for ({period})!",
+        "history_empty": "No records found for ({period})!",
         "alt_history": "Medication Logs",
-        "alt_menu": "Select medicine details",
+        "alt_menu": "Select details",
         "status_taken": "Taken"
     },
     "id": {
-        "bag_title": "📋 Detail Kantong Obat",
-        "pill_title": "💊 Detail Identifikasi Obat",
-        "btn_prompt": "Pilih opsi di bawah untuk melihat detail:",
+        "bag_title": "📋 Detail Kantong",
+        "pill_title": "💊 Detail Obat",
+        "btn_prompt": "Pilih opsi di bawah:",
         "btn_name": "🏷️ Nama Obat",
-        "btn_pill_name": "🏷️ Kemungkinan Nama Obat",
-        "btn_category": "🩺 Kategori Penyakit",
-        "btn_usage": "🎯 Indikasi/Kegunaan",
+        "btn_pill_name": "🏷️ Kemungkinan Nama",
+        "btn_category": "🩺 Kategori",
+        "btn_usage": "🎯 Kegunaan",
         "btn_pill_usage": "🎯 Indikasi Utama",
-        "btn_dose": "⏰ Dosis & Cara Pakai",
+        "btn_dose": "⏰ Dosis",
         "btn_pill_dose": "⏰ Dosis Umum",
         "btn_side_effect": "🧪 Efek Samping",
-        "warning_title": "⚠️ 【Peringatan & Perhatian】",
-        "history_title": "📋 Catatan Obat 【{period}】",
-        "history_subtitle": "Total {count} catatan ditemukan",
-        "history_empty": "Tidak ada catatan obat untuk periode ({period})!",
+        "warning_title": "⚠️ 【Peringatan】",
+        "history_title": "📋 Catatan 【{period}】",
+        "history_subtitle": "Total {count} catatan",
+        "history_empty": "Tidak ada catatan untuk ({period})!",
         "alt_history": "Catatan Obat",
         "alt_menu": "Pilih detail obat",
         "status_taken": "Sudah Minum"
@@ -226,13 +226,13 @@ SYSTEM_INSTRUCTION = """
 - 嚴禁輸出任何客套話、問候語。
 """
 
-# ==================== [支援多國語言的段落擷取器 (已完善關鍵字)] ====================
+# ==================== [支援多國語言與同義字的段落擷取器] ====================
 def extract_section(text, keyword):
     try:
         synonyms = {
             "藥品名稱": [
                 "藥品名稱", "可能藥品名稱", 
-                "Drug Name", "Possible Drug Name", 
+                "Drug Name", "Possible Drug Name", "Name",
                 "Nama Obat", "Kemungkinan Nama Obat"
             ],
             "慢性病分類": [
@@ -268,7 +268,6 @@ def extract_section(text, keyword):
         result = []
         
         for line in lines:
-            # 純文字搜尋比對（無視大小寫）
             if any(k.lower() in line.lower() for k in target_keywords):
                 capturing = True
                 if '：' in line and len(line.split('：')) > 1 and line.split('：')[1].strip():
@@ -581,7 +580,6 @@ def handle_text_message(event):
                 q_info = query_days_map[user_message]
                 days_limit = q_info["days"]
                 
-                # 根據語言選取顯示的時間標題
                 period_title = q_info.get(f"title_{lang}", q_info["title_zh"])
 
                 tz_taiwan = timezone(timedelta(hours=8))
@@ -604,7 +602,6 @@ def handle_text_message(event):
 
                 recent_logs = user_logs[::-1][:10]
 
-                # 帶入使用者語言產出多語系 Flex Message
                 flex_msg = build_history_flex(recent_logs, period_title, lang=lang)
                 line_bot_api.reply_message(
                     ReplyMessageRequest(
@@ -756,7 +753,6 @@ def handle_image_message(event):
         try:
             messages_to_send = [TextMessage(text=result_text)]
             if "此藥丸非慢性病用藥" not in base_result_text and "❌ 辨識失敗" not in result_text:
-                # 根據使用者當前的語言（lang）動態產出多國語言選單 Template
                 if is_bag:
                     menu_template = TemplateMessage(
                         alt_text=t["alt_menu"],
