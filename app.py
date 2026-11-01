@@ -140,7 +140,7 @@ def get_sheets_client():
         print(f"[Sheets系統] ❌ 連線失敗: {e}")
         return None
 
-# 初始化嘗試連線一次
+# 初始化連線
 get_sheets_client()
 
 # ==================== [RAG 慢性病知識庫預載 (純文字檔)] ====================
@@ -665,7 +665,7 @@ def handle_image_message(event):
 3. 請全程使用「{target_lang}」語言回覆。
 """
             
-            candidate_models = ['gemini-3.8-flash', 'gemini-2.5-flash']
+            candidate_models = ['gemini-2.5-flash', 'gemini-1.5-flash']
             response = None
             last_error = None
 
@@ -708,7 +708,7 @@ def handle_image_message(event):
 """
                 try:
                     eval_response = ai_client.models.generate_content(
-                        model='gemini-3.8-flash',
+                        model='gemini-2.5-flash',
                         contents=[img, bag_eval_prompt], 
                         config=types.GenerateContentConfig(
                             response_mime_type="application/json",
@@ -731,7 +731,7 @@ def handle_image_message(event):
 """
                 try:
                     eval_response = ai_client.models.generate_content(
-                        model='gemini-3.8-flash',
+                        model='gemini-2.5-flash',
                         contents=pill_eval_prompt,
                         config=types.GenerateContentConfig(
                             response_mime_type="application/json",
@@ -753,7 +753,7 @@ def handle_image_message(event):
 
         try:
             messages_to_send = [TextMessage(text=result_text)]
-            if "此藥丸非慢性病用藥，無法偵測" not in base_result_text and "❌ 辨識失敗" not in result_text:
+            if "此藥丸非慢性病用藥" not in base_result_text and "❌ 辨識失敗" not in result_text:
                 if "📋 【藥袋辨識結果】" in base_result_text:
                     menu_template = TemplateMessage(
                         alt_text=t["alt_menu"],
