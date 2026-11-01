@@ -663,8 +663,8 @@ def handle_image_message(event):
 3. 請全程使用「{target_lang}」語言回覆。
 """
             
-            # 💡 已更新為官方最新穩定支援的模型名稱陣列
-            candidate_models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest']
+            # 💡 已修正為官方支援的標準模型名稱
+            candidate_models = ['gemini-2.5-flash', 'gemini-2.0-flash']
             response = None
             last_error = None
 
