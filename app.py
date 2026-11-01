@@ -164,22 +164,56 @@ SYSTEM_INSTRUCTION = """
 - 嚴禁輸出任何客套話、問候語。
 """
 
+# ==================== [支援多國語言的段落擷取器] ====================
 def extract_section(text, keyword):
     try:
+        synonyms = {
+            "藥品名稱": [
+                "藥品名稱", "可能藥品名稱", 
+                "Drug Name", "Possible Drug Name", 
+                "Nama Obat", "Kemungkinan Nama Obat"
+            ],
+            "適應症/用途": [
+                "適應症/用途", "主要適應症/用途", "適應症", "用途", 
+                "Indications/Uses", "Main Indications/Uses", "Indications", "Uses", 
+                "Indikasi/Kegunaan", "Indikasi", "Kegunaan"
+            ],
+            "用法用量": [
+                "用法用量", "一般常見用法", "用法", "用量", 
+                "Dosage and Administration", "General Dosage", "Dosage", "Usage", 
+                "Dosis dan Penggunaan", "Dosis", "Cara Pakai"
+            ],
+            "副作用": [
+                "副作用", 
+                "Side Effects", 
+                "Efek Samping"
+            ],
+            "注意事項": [
+                "注意事項", "服用注意事項與警語", "警語", 
+                "Precautions", "Warnings", "Precautions and Warnings", 
+                "Peringatan dan Perhatian", "Peringatan", "Perhatian"
+            ]
+        }
+        
+        target_keywords = synonyms.get(keyword, [keyword])
         lines = text.split('\n')
         capturing = False
         result = []
+        
         for line in lines:
-            if keyword in line:
+            if any(k.lower() in line.lower() for k in target_keywords):
                 capturing = True
                 if '：' in line and len(line.split('：')) > 1 and line.split('：')[1].strip():
                     result.append(line.split('：')[1].strip())
+                elif ':' in line and len(line.split(':')) > 1 and line.split(':')[1].strip():
+                    result.append(line.split(':')[1].strip())
                 continue
-            elif capturing and ('【' in line or '━━━━━━━━━━━━━━' in line or '💡' in line):
+            elif capturing and ('【' in line or '[' in line or '━━━━━━━━━━━━━━' in line or '💡' in line):
                 break
             elif capturing:
                 if line.strip():
                     result.append(line.strip())
+                    
         return "\n".join(result) if result else "（未標示 / Not specified）"
     except Exception:
         return "（解析中...）"
@@ -199,7 +233,6 @@ def send_delay_reminder(user_id):
 
 # ==================== [Flex Message 歷史紀錄卡片生成器] ====================
 def build_history_flex(records, period_title):
-    """依照查詢區間（7日 / 1個月 / 2個月）生成專屬歷史紀錄卡片"""
     if not records:
         rows_contents = [{
             "type": "text",
@@ -336,19 +369,19 @@ def handle_postback(event):
         elif data.startswith("view_pill="):
             view_type = data.split("=")[1]
             stored_data = user_pending_data.get(user_id, "查無近期辨識資料，請重新上傳照片。")
-            warning_info = extract_section(stored_data, "服用注意事項與警語")
+            warning_info = extract_section(stored_data, "注意事項")
 
             if view_type == "name":
-                val = extract_section(stored_data, "可能藥品名稱")
+                val = extract_section(stored_data, "藥品名稱")
                 reply_msg = f"🏷️ 【可能藥品名稱】：\n{val}\n\n⚠️ 【注意事項與警語】：\n{warning_info}"
             elif view_type == "category":
                 val = extract_section(stored_data, "慢性病分類")
                 reply_msg = f"🩺 【慢性病分類】：\n{val}\n\n⚠️ 【注意事項與警語】：\n{warning_info}"
             elif view_type == "usage":
-                val = extract_section(stored_data, "主要適應症/用途")
+                val = extract_section(stored_data, "適應症/用途")
                 reply_msg = f"🎯 【主要適應症/用途】：\n{val}\n\n⚠️ 【注意事項與警語】：\n{warning_info}"
             elif view_type == "dose":
-                val = extract_section(stored_data, "一般常見用法")
+                val = extract_section(stored_data, "用法用量")
                 reply_msg = f"⏰ 【一般常見用法】：\n{val}\n\n⚠️ 【注意事項與警語】：\n{warning_info}"
             else:
                 reply_msg = stored_data
@@ -365,8 +398,7 @@ def handle_text_message(event):
     user_message = event.message.text.strip()
     user_id = event.source.user_id
 
-    # 點選選單傳送「語言翻譯」時彈出語言選單
-    if user_message == "語言翻譯":
+    if user_message in ["語言翻譯", "語言設定", "Language Settings", "Pengaturan Bahasa"]:
         with ApiClient(configuration) as api_client:
             line_bot_api = MessagingApi(api_client)
             line_bot_api.reply_message(
@@ -399,7 +431,6 @@ def handle_text_message(event):
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
 
-        # 1. 處理吃藥定時器
         if user_message in timer_options:
             selected_option = timer_options[user_message]
             delay_seconds = selected_option["seconds"]
@@ -416,8 +447,7 @@ def handle_text_message(event):
                 print(f"❌ [發送即時確認失敗] ➔ {reply_error}")
             return  
 
-        # 2. 處理「我吃藥了」打卡
-        if user_message == "我吃藥了":
+        if user_message in ["我吃藥了", "I took my medicine", "Saya sudah minum obat"]:
             client = get_sheets_client()
             if not client:
                 line_bot_api.reply_message(
@@ -436,7 +466,7 @@ def handle_text_message(event):
                 line_bot_api.reply_message(
                     ReplyMessageRequest(
                         reply_token=event.reply_token,
-                        messages=[TextMessage(text="太好了!已幫您紀錄吃藥時間")]
+                        messages=[TextMessage(text="太好了！已幫您紀錄吃藥時間。")]
                     )
                 )
             except Exception as err:
@@ -449,7 +479,6 @@ def handle_text_message(event):
                 )
             return
 
-        # 3. 處理「7日內 / 1個月內 / 2個月內用藥紀錄」查詢
         query_days_map = {
             "7日內用藥紀錄": {"days": 7, "title": "7日內"},
             "1個月內用藥紀錄": {"days": 30, "title": "1個月內"},
@@ -581,11 +610,13 @@ def handle_image_message(event):
             reasoning = "已完成系統檢核"
             metric_title = "•系統解析完整度"
 
+            is_bag = ("藥袋" in base_result_text) or ("Bag" in base_result_text) or ("bag" in base_result_text)
+
             if "此藥丸非慢性病用藥，無法偵測" in base_result_text:
                 similarity_score = "0% (未收錄)"
                 reasoning = "該藥丸不在慢性病知識庫範圍內"
                 metric_title = "與慢性病藥品匹配度"
-            elif "📋 【藥袋辨識結果】" in base_result_text:
+            elif is_bag:
                 metric_title = "圖文忠實度與準確度"
                 bag_eval_prompt = f"""
 你是一位嚴格的醫療 RAG 系統評估裁判。請同時檢視【原始上傳的藥袋圖片】與下方【AI 辨識出的藥袋結果】，評估其忠實度與準確度。
@@ -639,7 +670,7 @@ def handle_image_message(event):
         try:
             messages_to_send = [TextMessage(text=result_text)]
             if "此藥丸非慢性病用藥，無法偵測" not in base_result_text and "❌ 辨識失敗" not in result_text:
-                if "📋 【藥袋辨識結果】" in base_result_text:
+                if is_bag:
                     menu_template = TemplateMessage(
                         alt_text="請選擇您想了解的藥袋資訊",
                         template=ButtonsTemplate(
