@@ -748,7 +748,9 @@ def handle_image_message(event):
             result_text = f"{base_result_text}\n\n📊 【RAG Evaluation】\n━━━━━━━━━━━━━━\n• {metric_title}：{similarity_score}\n• Note：{reasoning}\n━━━━━━━━━━━━━━"
 
         except Exception as e:
-            result_text = "❌ 辨識失敗。請重新拍攝照片並再試一次！ / Recognition failed. Please try again!"
+            # 💡 這裡會將詳細錯誤印到 Render 主機 Logs 中，方便排查
+            print(f"❌ [Google AI 辨識重大錯誤] ➔ {e}")
+            result_text = f"❌ 辨識失敗（原因: {str(e)[:60]}）。請重新拍攝照片並再試一次！"
 
         try:
             messages_to_send = [TextMessage(text=result_text)]
