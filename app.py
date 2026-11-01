@@ -663,8 +663,8 @@ def handle_image_message(event):
 3. 請全程使用「{target_lang}」語言回覆。
 """
             
-            # 💡 已修正為官方支援的標準模型名稱
-            candidate_models = ['gemini-2.5-flash', 'gemini-2.0-flash']
+            # 💡 已更新為官方最新指定的 gemini-3.8-flash 模型
+            candidate_models = ['gemini-3.8-flash', 'gemini-2.5-flash']
             response = None
             last_error = None
 
@@ -709,7 +709,7 @@ def handle_image_message(event):
 """
                 try:
                     eval_response = ai_client.models.generate_content(
-                        model='gemini-2.5-flash',
+                        model='gemini-3.8-flash',
                         contents=[img, bag_eval_prompt], 
                         config=types.GenerateContentConfig(
                             response_mime_type="application/json",
@@ -725,14 +725,14 @@ def handle_image_message(event):
             else:
                 metric_title = "資訊準確度與相似度"
                 pill_eval_prompt = f"""
-你是一位嚴格的醫療 RAG 系統評估裁判。請比對【知識庫】與【AI辨識回答】，評估忠實度。
-【知識庫】：{RAG_KNOWLEDGE_BASE}
-【回答】：{base_result_text}
-請輸出 JSON 格式：{{"score": "95%", "reason": "完全對應"}}
+You are a strict medical RAG system evaluation judge. Please compare the [Knowledge Base] and [AI Identification Answer] to evaluate fidelity.
+[Knowledge Base]: {RAG_KNOWLEDGE_BASE}
+[Answer]: {base_result_text}
+Output JSON format: {{"score": "95%", "reason": "Perfect match"}}
 """
                 try:
                     eval_response = ai_client.models.generate_content(
-                        model='gemini-2.5-flash',
+                        model='gemini-3.8-flash',
                         contents=pill_eval_prompt,
                         config=types.GenerateContentConfig(
                             response_mime_type="application/json",
