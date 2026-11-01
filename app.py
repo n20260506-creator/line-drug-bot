@@ -46,7 +46,7 @@ LANGUAGE_MAP = {
     "id": "Bahasa Indonesia"
 }
 
-# 多國語言 UI 文字對照表（已將按鈕 label 嚴格控制在 20 個字元以內，防止 LINE 400 錯誤）
+# 多國語言 UI 文字對照表（按鈕 label 嚴格控制在 20 個字元以內）
 UI_TEXTS = {
     "zh": {
         "bag_title": "📋 藥袋資訊細節查詢",
@@ -663,7 +663,8 @@ def handle_image_message(event):
 3. 請全程使用「{target_lang}」語言回覆。
 """
             
-            candidate_models = ['gemini-2.5-flash', 'gemini-1.5-flash']
+            # 💡 已更新為官方最新穩定支援的模型名稱陣列
+            candidate_models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest']
             response = None
             last_error = None
 
@@ -748,7 +749,6 @@ def handle_image_message(event):
             result_text = f"{base_result_text}\n\n📊 【RAG Evaluation】\n━━━━━━━━━━━━━━\n• {metric_title}：{similarity_score}\n• Note：{reasoning}\n━━━━━━━━━━━━━━"
 
         except Exception as e:
-            # 💡 這裡會將詳細錯誤印到 Render 主機 Logs 中，方便排查
             print(f"❌ [Google AI 辨識重大錯誤] ➔ {e}")
             result_text = f"❌ 辨識失敗（原因: {str(e)[:60]}）。請重新拍攝照片並再試一次！"
 
