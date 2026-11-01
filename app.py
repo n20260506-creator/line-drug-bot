@@ -31,6 +31,7 @@ from linebot.v3.webhooks import (
 # 引入 Google 最新官方 GenAI 套件
 from google import genai
 from google.genai import types
+
 # 引入 Google Sheets 操作套件
 import gspread
 from google.oauth2.service_account import Credentials
@@ -77,6 +78,7 @@ def get_sheets_client():
 
 # 初始化嘗試連線一次
 get_sheets_client()
+
 # ==================== [RAG 慢性病知識庫預載 (純文字檔)] ====================
 RAG_KNOWLEDGE_BASE = ""
 TXT_PATH = "drug_guide.txt"
@@ -194,9 +196,10 @@ def send_delay_reminder(user_id):
             )
         except Exception as e:
             print(f"❌ [提醒發送失敗] ➔ {e}")
+
 # ==================== [Flex Message 歷史紀錄卡片生成器] ====================
 def build_history_flex(records, period_title):
-    """依照查詢區間（7天 / 1個月 / 2個月）生成專屬歷史紀錄卡片"""
+    """依照查詢區間（7日 / 1個月 / 2個月）生成專屬歷史紀錄卡片"""
     if not records:
         rows_contents = [{
             "type": "text",
@@ -251,7 +254,7 @@ def build_history_flex(records, period_title):
         }
     }
     return FlexMessage(alt_text=f"{period_title}用藥紀錄", contents=FlexContainer.from_dict(bubble_json))
-    
+
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers.get('X-Line-Signature', '')
@@ -411,7 +414,7 @@ def handle_text_message(event):
                 threading.Timer(delay_seconds, send_delay_reminder, args=[user_id]).start()
             except Exception as reply_error:
                 print(f"❌ [發送即時確認失敗] ➔ {reply_error}")
-            return  # 只有在符合定時提醒時才 return
+            return  
 
         # 2. 處理「我吃藥了」打卡
         if user_message == "我吃藥了":
@@ -504,7 +507,7 @@ def handle_text_message(event):
                     )
                 )
             return
-            
+
 @handler.add(MessageEvent, message=ImageMessageContent)
 def handle_image_message(event):
     with ApiClient(configuration) as api_client:
