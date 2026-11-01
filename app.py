@@ -46,6 +46,70 @@ LANGUAGE_MAP = {
     "id": "Bahasa Indonesia"
 }
 
+# 多國語言 UI 文字對照表
+UI_TEXTS = {
+    "zh": {
+        "bag_title": "📋 藥袋資訊細節查詢",
+        "pill_title": "💊 藥丸資訊細節查詢",
+        "btn_prompt": "請點選下方按鈕查看特定項目：",
+        "btn_name": "🏷️ 藥品名稱",
+        "btn_pill_name": "🏷️ 可能藥品名稱",
+        "btn_category": "🩺 慢性病分類",
+        "btn_usage": "🎯 適應症/用途",
+        "btn_pill_usage": "🎯 主要適應症/用途",
+        "btn_dose": "⏰ 用法用量",
+        "btn_pill_dose": "⏰ 一般常見用法",
+        "btn_side_effect": "🧪 副作用",
+        "warning_title": "⚠️ 【注意事項與警語】",
+        "history_title": "📋 【{period}】用藥紀錄",
+        "history_subtitle": "共計查詢到 {count} 筆服藥打卡",
+        "history_empty": "這段期間（{period}）尚無任何用藥紀錄！",
+        "alt_history": "用藥紀錄",
+        "alt_menu": "請選擇藥品細節資訊",
+        "status_taken": "已服藥"
+    },
+    "en": {
+        "bag_title": "📋 Medicine Bag Details",
+        "pill_title": "💊 Pill Identification Details",
+        "btn_prompt": "Select an option below to view details:",
+        "btn_name": "🏷️ Drug Name",
+        "btn_pill_name": "🏷️ Possible Drug Name",
+        "btn_category": "🩺 Disease Category",
+        "btn_usage": "🎯 Indications/Uses",
+        "btn_pill_usage": "🎯 Main Indications/Uses",
+        "btn_dose": "⏰ Dosage & Usage",
+        "btn_pill_dose": "⏰ Common Dosage",
+        "btn_side_effect": "🧪 Side Effects",
+        "warning_title": "⚠️ 【Precautions & Warnings】",
+        "history_title": "📋 【{period}】Medication Logs",
+        "history_subtitle": "Total {count} records found",
+        "history_empty": "No medication records found for ({period})!",
+        "alt_history": "Medication Logs",
+        "alt_menu": "Select medicine details",
+        "status_taken": "Taken"
+    },
+    "id": {
+        "bag_title": "📋 Detail Kantong Obat",
+        "pill_title": "💊 Detail Identifikasi Obat",
+        "btn_prompt": "Pilih opsi di bawah untuk melihat detail:",
+        "btn_name": "🏷️ Nama Obat",
+        "btn_pill_name": "🏷️ Kemungkinan Nama Obat",
+        "btn_category": "🩺 Kategori Penyakit",
+        "btn_usage": "🎯 Indikasi/Kegunaan",
+        "btn_pill_usage": "🎯 Indikasi Utama",
+        "btn_dose": "⏰ Dosis & Cara Pakai",
+        "btn_pill_dose": "⏰ Dosis Umum",
+        "btn_side_effect": "🧪 Efek Samping",
+        "warning_title": "⚠️ 【Peringatan & Perhatian】",
+        "history_title": "📋 Catatan Obat 【{period}】",
+        "history_subtitle": "Total {count} catatan ditemukan",
+        "history_empty": "Tidak ada catatan obat untuk periode ({period})!",
+        "alt_history": "Catatan Obat",
+        "alt_menu": "Pilih detail obat",
+        "status_taken": "Sudah Minum"
+    }
+}
+
 app = Flask(__name__)
 
 # ==================== [Google 試算表連線設定] ====================
@@ -76,10 +140,9 @@ def get_sheets_client():
         print(f"[Sheets系統] ❌ 連線失敗: {e}")
         return None
 
-# 初始化嘗試連線一次
 get_sheets_client()
 
-# ==================== [RAG 慢性病知識庫預載 (純文字檔)] ====================
+# ==================== [RAG 慢性病知識庫預載] ====================
 RAG_KNOWLEDGE_BASE = ""
 TXT_PATH = "drug_guide.txt"
 
@@ -93,7 +156,6 @@ try:
 except Exception as e:
     print(f"[RAG系統] ❌ 讀取 TXT 知識庫失敗: {e}")
 
-# 讀取環境變數
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
@@ -164,7 +226,7 @@ SYSTEM_INSTRUCTION = """
 - 嚴禁輸出任何客套話、問候語。
 """
 
-# ==================== [支援多國語言的段落擷取器] ====================
+# ==================== [支援多國語言的段落擷取器 (已完善關鍵字)] ====================
 def extract_section(text, keyword):
     try:
         synonyms = {
@@ -173,25 +235,30 @@ def extract_section(text, keyword):
                 "Drug Name", "Possible Drug Name", 
                 "Nama Obat", "Kemungkinan Nama Obat"
             ],
+            "慢性病分類": [
+                "慢性病分類", 
+                "Chronic Disease Category", "Disease Category", "Category", 
+                "Kategori Penyakit Kronis", "Kategori Penyakit", "Kategori"
+            ],
             "適應症/用途": [
                 "適應症/用途", "主要適應症/用途", "適應症", "用途", 
-                "Indications/Uses", "Main Indications/Uses", "Indications", "Uses", 
-                "Indikasi/Kegunaan", "Indikasi", "Kegunaan"
+                "Indications/Uses", "Main Indications/Uses", "Indications", "Uses", "Indication",
+                "Indikasi/Kegunaan", "Indikasi Utama", "Indikasi", "Kegunaan"
             ],
             "用法用量": [
                 "用法用量", "一般常見用法", "用法", "用量", 
-                "Dosage and Administration", "General Dosage", "Dosage", "Usage", 
-                "Dosis dan Penggunaan", "Dosis", "Cara Pakai"
+                "Dosage and Administration", "General Dosage", "Dosage & Usage", "Dosage", "Usage", "Common Dosage",
+                "Dosis dan Penggunaan", "Dosis Umum", "Dosis", "Cara Pakai"
             ],
             "副作用": [
                 "副作用", 
-                "Side Effects", 
+                "Side Effects", "Side Effect",
                 "Efek Samping"
             ],
             "注意事項": [
-                "注意事項", "服用注意事項與警語", "警語", 
-                "Precautions", "Warnings", "Precautions and Warnings", 
-                "Peringatan dan Perhatian", "Peringatan", "Perhatian"
+                "注意事項", "服用注意事項與警語", "注意事項與警語", "警語", 
+                "Precautions", "Warnings", "Precautions and Warnings", "Precautions & Warnings",
+                "Peringatan dan Perhatian", "Peringatan", "Perhatian", "Peringatan & Perhatian"
             ]
         }
         
@@ -201,6 +268,7 @@ def extract_section(text, keyword):
         result = []
         
         for line in lines:
+            # 純文字搜尋比對（無視大小寫）
             if any(k.lower() in line.lower() for k in target_keywords):
                 capturing = True
                 if '：' in line and len(line.split('：')) > 1 and line.split('：')[1].strip():
@@ -225,18 +293,22 @@ def send_delay_reminder(user_id):
             line_bot_api.push_message(
                 PushMessageRequest(
                     to=user_id,
-                    messages=[TextMessage(text="🔔 提醒您該吃藥囉！")]
+                    messages=[TextMessage(text="🔔 提醒您該吃藥囉！ / Medicine Reminder")]
                 )
             )
         except Exception as e:
             print(f"❌ [提醒發送失敗] ➔ {e}")
 
-# ==================== [Flex Message 歷史紀錄卡片生成器] ====================
-def build_history_flex(records, period_title):
+# ==================== [多語系 Flex Message 生成器] ====================
+def build_history_flex(records, period_title, lang="zh"):
+    t = UI_TEXTS.get(lang, UI_TEXTS["zh"])
+    formatted_title = t["history_title"].format(period=period_title)
+    formatted_subtitle = t["history_subtitle"].format(count=len(records))
+
     if not records:
         rows_contents = [{
             "type": "text",
-            "text": f"這段期間（{period_title}）尚無任何用藥紀錄！",
+            "text": t["history_empty"].format(period=period_title),
             "color": "#6B7280",
             "size": "sm",
             "align": "center"
@@ -251,7 +323,7 @@ def build_history_flex(records, period_title):
                 "contents": [
                     {"type": "text", "text": "💊", "flex": 0, "size": "sm"},
                     {"type": "text", "text": r["time"], "size": "sm", "weight": "bold", "color": "#1F2937", "flex": 3},
-                    {"type": "text", "text": r["status"], "size": "xs", "color": "#059669", "align": "end", "flex": 1}
+                    {"type": "text", "text": t["status_taken"], "size": "xs", "color": "#059669", "align": "end", "flex": 1}
                 ]
             })
 
@@ -265,14 +337,14 @@ def build_history_flex(records, period_title):
             "contents": [
                 {
                     "type": "text",
-                    "text": f"📋 【{period_title}】用藥紀錄",
+                    "text": formatted_title,
                     "weight": "bold",
                     "color": "#FFFFFF",
                     "size": "lg"
                 },
                 {
                     "type": "text",
-                    "text": f"共計查詢到 {len(records)} 筆服藥打卡",
+                    "text": formatted_subtitle,
                     "color": "#BFDBFE",
                     "size": "xs",
                     "margin": "xs"
@@ -286,7 +358,7 @@ def build_history_flex(records, period_title):
             "contents": rows_contents
         }
     }
-    return FlexMessage(alt_text=f"{period_title}用藥紀錄", contents=FlexContainer.from_dict(bubble_json))
+    return FlexMessage(alt_text=t["alt_history"], contents=FlexContainer.from_dict(bubble_json))
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -306,10 +378,10 @@ def handle_follow(event):
             ReplyMessageRequest(
                 reply_token=event.reply_token,
                 messages=[TemplateMessage(
-                    alt_text="請選擇您的語言",
+                    alt_text="請選擇您的語言 / Select Language",
                     template=ButtonsTemplate(
                         title="請選擇語言 / Select Language",
-                        text="請選擇藥物資訊的顯示語言：",
+                        text="請選擇顯示語言 / Choose Language:",
                         actions=[
                             PostbackAction(label="繁體中文", data="lang=zh"),
                             PostbackAction(label="English", data="lang=en"),
@@ -324,6 +396,8 @@ def handle_follow(event):
 def handle_postback(event):
     data = event.postback.data
     user_id = event.source.user_id
+    lang = user_language_prefs.get(user_id, "zh")
+    t = UI_TEXTS.get(lang, UI_TEXTS["zh"])
     
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
@@ -341,21 +415,21 @@ def handle_postback(event):
 
         elif data.startswith("view_bag="):
             view_type = data.split("=")[1]
-            stored_data = user_pending_data.get(user_id, "查無近期辨識資料，請重新上傳照片。")
+            stored_data = user_pending_data.get(user_id, "查無近期辨識資料 / No recent recognition data.")
             warning_info = extract_section(stored_data, "注意事項")
 
             if view_type == "name":
                 val = extract_section(stored_data, "藥品名稱")
-                reply_msg = f"🏷️ 【藥品名稱】：\n{val}\n\n⚠️ 【注意事項】：\n{warning_info}"
+                reply_msg = f"{t['btn_name']}：\n{val}\n\n{t['warning_title']}：\n{warning_info}"
             elif view_type == "usage":
                 val = extract_section(stored_data, "適應症/用途")
-                reply_msg = f"🎯 【適應症/用途】：\n{val}\n\n⚠️ 【注意事項】：\n{warning_info}"
+                reply_msg = f"{t['btn_usage']}：\n{val}\n\n{t['warning_title']}：\n{warning_info}"
             elif view_type == "dose":
                 val = extract_section(stored_data, "用法用量")
-                reply_msg = f"⏰ 【用法用量】：\n{val}\n\n⚠️ 【注意事項】：\n{warning_info}"
+                reply_msg = f"{t['btn_dose']}：\n{val}\n\n{t['warning_title']}：\n{warning_info}"
             elif view_type == "side_effect":
                 val = extract_section(stored_data, "副作用")
-                reply_msg = f"🧪 【副作用】：\n{val}\n\n⚠️ 【注意事項】：\n{warning_info}"
+                reply_msg = f"{t['btn_side_effect']}：\n{val}\n\n{t['warning_title']}：\n{warning_info}"
             else:
                 reply_msg = stored_data
 
@@ -368,21 +442,21 @@ def handle_postback(event):
 
         elif data.startswith("view_pill="):
             view_type = data.split("=")[1]
-            stored_data = user_pending_data.get(user_id, "查無近期辨識資料，請重新上傳照片。")
+            stored_data = user_pending_data.get(user_id, "查無近期辨識資料 / No recent recognition data.")
             warning_info = extract_section(stored_data, "注意事項")
 
             if view_type == "name":
                 val = extract_section(stored_data, "藥品名稱")
-                reply_msg = f"🏷️ 【可能藥品名稱】：\n{val}\n\n⚠️ 【注意事項與警語】：\n{warning_info}"
+                reply_msg = f"{t['btn_pill_name']}：\n{val}\n\n{t['warning_title']}：\n{warning_info}"
             elif view_type == "category":
                 val = extract_section(stored_data, "慢性病分類")
-                reply_msg = f"🩺 【慢性病分類】：\n{val}\n\n⚠️ 【注意事項與警語】：\n{warning_info}"
+                reply_msg = f"{t['btn_category']}：\n{val}\n\n{t['warning_title']}：\n{warning_info}"
             elif view_type == "usage":
                 val = extract_section(stored_data, "適應症/用途")
-                reply_msg = f"🎯 【主要適應症/用途】：\n{val}\n\n⚠️ 【注意事項與警語】：\n{warning_info}"
+                reply_msg = f"{t['btn_pill_usage']}：\n{val}\n\n{t['warning_title']}：\n{warning_info}"
             elif view_type == "dose":
                 val = extract_section(stored_data, "用法用量")
-                reply_msg = f"⏰ 【一般常見用法】：\n{val}\n\n⚠️ 【注意事項與警語】：\n{warning_info}"
+                reply_msg = f"{t['btn_pill_dose']}：\n{val}\n\n{t['warning_title']}：\n{warning_info}"
             else:
                 reply_msg = stored_data
 
@@ -397,6 +471,7 @@ def handle_postback(event):
 def handle_text_message(event):
     user_message = event.message.text.strip()
     user_id = event.source.user_id
+    lang = user_language_prefs.get(user_id, "zh")
 
     if user_message in ["語言翻譯", "語言設定", "Language Settings", "Pengaturan Bahasa"]:
         with ApiClient(configuration) as api_client:
@@ -406,10 +481,10 @@ def handle_text_message(event):
                     reply_token=event.reply_token,
                     messages=[
                         TemplateMessage(
-                            alt_text="請選擇您的語言",
+                            alt_text="請選擇您的語言 / Select Language",
                             template=ButtonsTemplate(
                                 title="請選擇語言 / Select Language",
-                                text="請選擇藥物資訊的顯示語言：",
+                                text="請選擇顯示語言 / Choose Language:",
                                 actions=[
                                     PostbackAction(label="繁體中文", data="lang=zh"),
                                     PostbackAction(label="English", data="lang=en"),
@@ -439,7 +514,7 @@ def handle_text_message(event):
                 line_bot_api.reply_message(
                     ReplyMessageRequest(
                         reply_token=event.reply_token,
-                        messages=[TextMessage(text=f"⏰ 好的！已為您設定 {minutes_text} 分鐘後的吃藥提醒。")]
+                        messages=[TextMessage(text=f"⏰ 已設定 {minutes_text} 分鐘後提醒！ / Reminder set for {minutes_text} mins.")]
                     )
                 )
                 threading.Timer(delay_seconds, send_delay_reminder, args=[user_id]).start()
@@ -453,7 +528,7 @@ def handle_text_message(event):
                 line_bot_api.reply_message(
                     ReplyMessageRequest(
                         reply_token=event.reply_token,
-                        messages=[TextMessage(text="❌ 試算表連線失敗，請檢查系統金鑰設定。")]
+                        messages=[TextMessage(text="❌ 試算表連線失敗。 / Google Sheets Connection Failed.")]
                     )
                 )
                 return
@@ -463,10 +538,16 @@ def handle_text_message(event):
                 now_str = datetime.now(tz_taiwan).strftime("%Y-%m-%d %H:%M:%S")
                 client.append_row([now_str, user_id, "已服藥"])
                 
+                reply_success = {
+                    "zh": "太好了！已幫您紀錄吃藥時間。",
+                    "en": "Great! Your medication time has been recorded.",
+                    "id": "Bagus! Waktu minum obat Anda telah dicatat."
+                }
+                
                 line_bot_api.reply_message(
                     ReplyMessageRequest(
                         reply_token=event.reply_token,
-                        messages=[TextMessage(text="太好了！已幫您紀錄吃藥時間。")]
+                        messages=[TextMessage(text=reply_success.get(lang, reply_success["zh"]))]
                     )
                 )
             except Exception as err:
@@ -474,15 +555,15 @@ def handle_text_message(event):
                 line_bot_api.reply_message(
                     ReplyMessageRequest(
                         reply_token=event.reply_token,
-                        messages=[TextMessage(text="❌ 紀錄失敗，請稍後再試。")]
+                        messages=[TextMessage(text="❌ 紀錄失敗 / Failed to record.")]
                     )
                 )
             return
 
         query_days_map = {
-            "7日內用藥紀錄": {"days": 7, "title": "7日內"},
-            "1個月內用藥紀錄": {"days": 30, "title": "1個月內"},
-            "2個月內用藥紀錄": {"days": 60, "title": "2個月內"}
+            "7日內用藥紀錄": {"days": 7, "title_zh": "7日內", "title_en": "7 Days", "title_id": "7 Hari"},
+            "1個月內用藥紀錄": {"days": 30, "title_zh": "1個月內", "title_en": "1 Month", "title_id": "1 Bulan"},
+            "2個月內用藥紀錄": {"days": 60, "title_zh": "2個月內", "title_en": "2 Months", "title_id": "2 Bulan"}
         }
 
         if user_message in query_days_map:
@@ -491,14 +572,17 @@ def handle_text_message(event):
                 line_bot_api.reply_message(
                     ReplyMessageRequest(
                         reply_token=event.reply_token,
-                        messages=[TextMessage(text="❌ 試算表連線失敗，請檢查系統金鑰設定。")]
+                        messages=[TextMessage(text="❌ 試算表連線失敗。")]
                     )
                 )
                 return
 
             try:
-                days_limit = query_days_map[user_message]["days"]
-                period_title = query_days_map[user_message]["title"]
+                q_info = query_days_map[user_message]
+                days_limit = q_info["days"]
+                
+                # 根據語言選取顯示的時間標題
+                period_title = q_info.get(f"title_{lang}", q_info["title_zh"])
 
                 tz_taiwan = timezone(timedelta(hours=8))
                 now = datetime.now(tz_taiwan)
@@ -520,7 +604,8 @@ def handle_text_message(event):
 
                 recent_logs = user_logs[::-1][:10]
 
-                flex_msg = build_history_flex(recent_logs, period_title)
+                # 帶入使用者語言產出多語系 Flex Message
+                flex_msg = build_history_flex(recent_logs, period_title, lang=lang)
                 line_bot_api.reply_message(
                     ReplyMessageRequest(
                         reply_token=event.reply_token,
@@ -567,6 +652,7 @@ def handle_image_message(event):
             user_id = event.source.user_id
             lang = user_language_prefs.get(user_id, "zh")
             target_lang = LANGUAGE_MAP.get(lang, "繁體中文")
+            t = UI_TEXTS.get(lang, UI_TEXTS["zh"])
             
             prompt_content = f"""
 請判斷這張照片是「藥袋」還是「藥丸/藥片/膠囊」。
@@ -610,12 +696,12 @@ def handle_image_message(event):
             reasoning = "已完成系統檢核"
             metric_title = "•系統解析完整度"
 
-            is_bag = ("藥袋" in base_result_text) or ("Bag" in base_result_text) or ("bag" in base_result_text)
+            is_bag = ("藥袋" in base_result_text) or ("Bag" in base_result_text) or ("bag" in base_result_text) or ("Kantong" in base_result_text)
 
-            if "此藥丸非慢性病用藥，無法偵測" in base_result_text:
-                similarity_score = "0% (未收錄)"
-                reasoning = "該藥丸不在慢性病知識庫範圍內"
-                metric_title = "與慢性病藥品匹配度"
+            if "此藥丸非慢性病用藥，無法偵測" in base_result_text or "Tidak dapat dideteksi" in base_result_text:
+                similarity_score = "0%"
+                reasoning = "不在慢性病知識庫範圍內"
+                metric_title = "匹配度"
             elif is_bag:
                 metric_title = "圖文忠實度與準確度"
                 bag_eval_prompt = f"""
@@ -662,39 +748,40 @@ def handle_image_message(event):
                     similarity_score = "N/A"
                     reasoning = "動態評估略過"
 
-            result_text = f"{base_result_text}\n\n📊 【RAG 系統評估指標】\n━━━━━━━━━━━━━━\n• {metric_title}：{similarity_score}\n• 檢核說明：{reasoning}\n━━━━━━━━━━━━━━"
+            result_text = f"{base_result_text}\n\n📊 【RAG Evaluation】\n━━━━━━━━━━━━━━\n• {metric_title}：{similarity_score}\n• Note：{reasoning}\n━━━━━━━━━━━━━━"
 
         except Exception as e:
-            result_text = "❌ 辨識失敗。可能原因：照片過於模糊、反光、或是 Google AI 連線超時。請重新拍攝並再試一次！"
+            result_text = "❌ 辨識失敗。請重新拍攝照片並再試一次！ / Recognition failed. Please try again!"
 
         try:
             messages_to_send = [TextMessage(text=result_text)]
-            if "此藥丸非慢性病用藥，無法偵測" not in base_result_text and "❌ 辨識失敗" not in result_text:
+            if "此藥丸非慢性病用藥" not in base_result_text and "❌ 辨識失敗" not in result_text:
+                # 根據使用者當前的語言（lang）動態產出多國語言選單 Template
                 if is_bag:
                     menu_template = TemplateMessage(
-                        alt_text="請選擇您想了解的藥袋資訊",
+                        alt_text=t["alt_menu"],
                         template=ButtonsTemplate(
-                            title="📋 藥袋資訊細節查詢",
-                            text="請點選下方按鈕查看特定項目：",
+                            title=t["bag_title"],
+                            text=t["btn_prompt"],
                             actions=[
-                                PostbackAction(label="🏷️ 藥品名稱", data="view_bag=name"),
-                                PostbackAction(label="🎯 適應症/用途", data="view_bag=usage"),
-                                PostbackAction(label="⏰ 用法用量", data="view_bag=dose"),
-                                PostbackAction(label="🧪 副作用", data="view_bag=side_effect")
+                                PostbackAction(label=t["btn_name"], data="view_bag=name"),
+                                PostbackAction(label=t["btn_usage"], data="view_bag=usage"),
+                                PostbackAction(label=t["btn_dose"], data="view_bag=dose"),
+                                PostbackAction(label=t["btn_side_effect"], data="view_bag=side_effect")
                             ]
                         )
                     )
                 else:
                     menu_template = TemplateMessage(
-                        alt_text="請選擇您想了解的藥丸資訊",
+                        alt_text=t["alt_menu"],
                         template=ButtonsTemplate(
-                            title="💊 藥丸資訊細節查詢",
-                            text="請點選下方按鈕查看特定項目：",
+                            title=t["pill_title"],
+                            text=t["btn_prompt"],
                             actions=[
-                                PostbackAction(label="🏷️ 可能藥品名稱", data="view_pill=name"),
-                                PostbackAction(label="🩺 慢性病分類", data="view_pill=category"),
-                                PostbackAction(label="🎯 主要適應症/用途", data="view_pill=usage"),
-                                PostbackAction(label="⏰ 一般常見用法", data="view_pill=dose")
+                                PostbackAction(label=t["btn_pill_name"], data="view_pill=name"),
+                                PostbackAction(label=t["btn_category"], data="view_pill=category"),
+                                PostbackAction(label=t["btn_pill_usage"], data="view_pill=usage"),
+                                PostbackAction(label=t["btn_pill_dose"], data="view_pill=dose")
                             ]
                         )
                     )
