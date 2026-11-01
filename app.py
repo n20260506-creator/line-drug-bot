@@ -46,7 +46,7 @@ LANGUAGE_MAP = {
     "id": "Bahasa Indonesia"
 }
 
-# 多國語言 UI 文字對照表（按鈕 label 嚴格控制在 20 個字元以內）
+# 多國語言 UI 文字對照表（嚴格將按鈕 label 控制在 20 個字元以內，防止 LINE 400 錯誤）
 UI_TEXTS = {
     "zh": {
         "bag_title": "📋 藥袋資訊細節查詢",
@@ -140,9 +140,10 @@ def get_sheets_client():
         print(f"[Sheets系統] ❌ 連線失敗: {e}")
         return None
 
+# 初始化嘗試連線一次
 get_sheets_client()
 
-# ==================== [RAG 慢性病知識庫預載] ====================
+# ==================== [RAG 慢性病知識庫預載 (純文字檔)] ====================
 RAG_KNOWLEDGE_BASE = ""
 TXT_PATH = "drug_guide.txt"
 
@@ -156,6 +157,7 @@ try:
 except Exception as e:
     print(f"[RAG系統] ❌ 讀取 TXT 知識庫失敗: {e}")
 
+# 讀取環境變數
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
@@ -298,7 +300,7 @@ def send_delay_reminder(user_id):
         except Exception as e:
             print(f"❌ [提醒發送失敗] ➔ {e}")
 
-# ==================== [多語系 Flex Message 生成器] ====================
+# ==================== [多語系 Flex Message 歷史紀錄卡片] ====================
 def build_history_flex(records, period_title, lang="zh"):
     t = UI_TEXTS.get(lang, UI_TEXTS["zh"])
     formatted_title = t["history_title"].format(period=period_title)
@@ -442,19 +444,19 @@ def handle_postback(event):
         elif data.startswith("view_pill="):
             view_type = data.split("=")[1]
             stored_data = user_pending_data.get(user_id, "查無近期辨識資料 / No recent recognition data.")
-            warning_info = extract_section(stored_data, "注意事項")
+            warning_info = extract_section(stored_data, "服用注意事項與警語")
 
             if view_type == "name":
-                val = extract_section(stored_data, "藥品名稱")
+                val = extract_section(stored_data, "可能藥品名稱")
                 reply_msg = f"{t['btn_pill_name']}：\n{val}\n\n{t['warning_title']}：\n{warning_info}"
             elif view_type == "category":
                 val = extract_section(stored_data, "慢性病分類")
                 reply_msg = f"{t['btn_category']}：\n{val}\n\n{t['warning_title']}：\n{warning_info}"
             elif view_type == "usage":
-                val = extract_section(stored_data, "適應症/用途")
+                val = extract_section(stored_data, "主要適應症/用途")
                 reply_msg = f"{t['btn_pill_usage']}：\n{val}\n\n{t['warning_title']}：\n{warning_info}"
             elif view_type == "dose":
-                val = extract_section(stored_data, "用法用量")
+                val = extract_section(stored_data, "一般常見用法")
                 reply_msg = f"{t['btn_pill_dose']}：\n{val}\n\n{t['warning_title']}：\n{warning_info}"
             else:
                 reply_msg = stored_data
@@ -663,7 +665,6 @@ def handle_image_message(event):
 3. 請全程使用「{target_lang}」語言回覆。
 """
             
-            # 💡 已更新為官方最新指定的 gemini-3.8-flash 模型
             candidate_models = ['gemini-3.8-flash', 'gemini-2.5-flash']
             response = None
             last_error = None
@@ -694,13 +695,11 @@ def handle_image_message(event):
             reasoning = "已完成系統檢核"
             metric_title = "•系統解析完整度"
 
-            is_bag = ("藥袋" in base_result_text) or ("Bag" in base_result_text) or ("bag" in base_result_text) or ("Kantong" in base_result_text)
-
-            if "此藥丸非慢性病用藥，無法偵測" in base_result_text or "Tidak dapat dideteksi" in base_result_text:
-                similarity_score = "0%"
-                reasoning = "不在慢性病知識庫範圍內"
-                metric_title = "匹配度"
-            elif is_bag:
+            if "此藥丸非慢性病用藥，無法偵測" in base_result_text:
+                similarity_score = "0% (未收錄)"
+                reasoning = "該藥丸不在慢性病知識庫範圍內"
+                metric_title = "與慢性病藥品匹配度"
+            elif "📋 【藥袋辨識結果】" in base_result_text:
                 metric_title = "圖文忠實度與準確度"
                 bag_eval_prompt = f"""
 你是一位嚴格的醫療 RAG 系統評估裁判。請同時檢視【原始上傳的藥袋圖片】與下方【AI 辨識出的藥袋結果】，評估其忠實度與準確度。
@@ -725,10 +724,10 @@ def handle_image_message(event):
             else:
                 metric_title = "資訊準確度與相似度"
                 pill_eval_prompt = f"""
-You are a strict medical RAG system evaluation judge. Please compare the [Knowledge Base] and [AI Identification Answer] to evaluate fidelity.
-[Knowledge Base]: {RAG_KNOWLEDGE_BASE}
-[Answer]: {base_result_text}
-Output JSON format: {{"score": "95%", "reason": "Perfect match"}}
+你是一位嚴格的醫療 RAG 系統評估裁判。請比對【知識庫】與【AI辨識回答】，評估忠實度。
+【知識庫】：{RAG_KNOWLEDGE_BASE}
+【回答】：{base_result_text}
+請輸出 JSON 格式：{{"score": "95%", "reason": "完全對應"}}
 """
                 try:
                     eval_response = ai_client.models.generate_content(
@@ -746,16 +745,16 @@ Output JSON format: {{"score": "95%", "reason": "Perfect match"}}
                     similarity_score = "N/A"
                     reasoning = "動態評估略過"
 
-            result_text = f"{base_result_text}\n\n📊 【RAG Evaluation】\n━━━━━━━━━━━━━━\n• {metric_title}：{similarity_score}\n• Note：{reasoning}\n━━━━━━━━━━━━━━"
+            result_text = f"{base_result_text}\n\n📊 【RAG 系統評估指標】\n━━━━━━━━━━━━━━\n• {metric_title}：{similarity_score}\n• 檢核說明：{reasoning}\n━━━━━━━━━━━━━━"
 
         except Exception as e:
             print(f"❌ [Google AI 辨識重大錯誤] ➔ {e}")
-            result_text = f"❌ 辨識失敗（原因: {str(e)[:60]}）。請重新拍攝照片並再試一次！"
+            result_text = "❌ 辨識失敗。可能原因：照片過於模糊、反光、或是 Google AI 連線超時。請重新拍攝並再試一次！"
 
         try:
             messages_to_send = [TextMessage(text=result_text)]
-            if "此藥丸非慢性病用藥" not in base_result_text and "❌ 辨識失敗" not in result_text:
-                if is_bag:
+            if "此藥丸非慢性病用藥，無法偵測" not in base_result_text and "❌ 辨識失敗" not in result_text:
+                if "📋 【藥袋辨識結果】" in base_result_text:
                     menu_template = TemplateMessage(
                         alt_text=t["alt_menu"],
                         template=ButtonsTemplate(
