@@ -64,7 +64,7 @@ UI_TEXTS = {
         "btn_dose": "⏰ 用法用量",
         "btn_pill_dose": "⏰ 一般常見用法",
         "btn_side_effect": "🧪 副作用",
-        "warning_title": "⚠️ 【注意事項與警語】",
+        "warning_title": "⚠️ 【服用注意事項與警語】",
         "history_title": "📋 【{period}】用藥紀錄",
         "history_subtitle": "共計查詢到 {count} 筆服藥打卡",
         "history_empty": "這段期間（{period}）尚無任何用藥紀錄！",
