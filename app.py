@@ -176,7 +176,7 @@ SYSTEM_INSTRUCTION = """
 請嚴格執行以下規則：
 
 【情況 A：如果是藥袋照片】
-1. 完整進行 OCR 文字辨識，讀取藥袋上的藥品名稱、用法、用量與注意事項。
+1. 完整進行 OCR 文字辨識，讀取藥袋上的藥品名稱、適應症、用法用量與注意事項。
 2. 必須嚴格遵守以下格式，標題與回答內容必須強制換行，且「回答內容與下一個標題之間必須空一行」：
 📋 【藥袋辨識結果】
 ━━━━━━━━━━━━━━
@@ -232,11 +232,12 @@ SYSTEM_INSTRUCTION = """
 
 def extract_section(text, keyword):
     try:
+        # 同義關鍵字對照表（全面補齊 中文 / 英文 / 印尼文 各種 AI 生成變體）
         synonyms = {
             "藥品名稱": [
                 "藥品名稱", "可能藥品名稱",
                 "drug name", "possible drug name", "name of drug", "medicine name",
-                "nama obat", "kemungkinan nama obat"
+                "nama obat", "kemungkinan nama obat", "nama obat-obatan"
             ],
             "慢性病分類": [
                 "慢性病分類",
@@ -245,13 +246,13 @@ def extract_section(text, keyword):
             ],
             "適應症/用途": [
                 "適應症/用途", "主要適應症/用途", "適應症", "用途",
-                "indications/uses", "main indications/uses", "indications", "uses", "indication",
-                "indikasi/kegunaan", "indikasi utama", "indikasi", "kegunaan"
+                "indications/uses", "main indications/uses", "indications", "uses", "indication", "purpose",
+                "indikasi/kegunaan", "indikasi utama", "indikasi", "kegunaan", "kegunaan obat", "indikasi & kegunaan"
             ],
             "用法用量": [
                 "用法用量", "一般常見用法", "用法", "用量",
                 "dosage and administration", "general dosage", "dosage & usage", "dosage", "usage", "common dosage",
-                "dosis dan penggunaan", "dosis umum", "dosis", "cara pakai"
+                "dosis dan penggunaan", "dosis umum", "dosis", "cara pakai", "aturan pakai"
             ],
             "副作用": [
                 "副作用",
@@ -261,7 +262,7 @@ def extract_section(text, keyword):
             "注意事項": [
                 "注意事項", "服用注意事項與警語", "注意事項與警語", "警語",
                 "precautions", "warnings", "precautions and warnings", "precautions & warnings",
-                "peringatan dan perhatian", "peringatan", "perhatian"
+                "peringatan dan perhatian", "peringatan", "perhatian", "hal yang perlu diperhatikan"
             ]
         }
 
@@ -288,7 +289,7 @@ def extract_section(text, keyword):
                 parts = re.split(r'[:：]', clean_line, maxsplit=1)
                 if len(parts) > 1 and parts[1].strip():
                     val = parts[1].strip().lstrip(']').strip()
-                    if val and val != "[帶入藥品名稱]":
+                    if val and not val.startswith("["):
                         result.append(val)
                 continue
 
@@ -680,7 +681,6 @@ def handle_image_message(event):
 3. 請全程使用「{target_lang}」語言回覆，但請保持輸出的標題結構不變。
 """
             
-            # 使用可用的模型名稱清單（以最新 3.8-flash 與 2.5-flash 為優先，並加入 1.5-flash 作為備用）
             candidate_models = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-1.5-flash']
             response = None
             last_error = None
@@ -700,7 +700,7 @@ def handle_image_message(event):
                 except Exception as err:
                     last_error = err
                     print(f"⚠️ [模型嘗試失敗] {model_name} ➔ {err}")
-                    time.sleep(2)  # 遇錯拉長等待時間避開速率限制
+                    time.sleep(2)
 
             if not response or not response.text:
                 raise last_error if last_error else Exception("No response generated")
@@ -708,7 +708,6 @@ def handle_image_message(event):
             base_result_text = response.text.strip()
             user_pending_data[user_id] = base_result_text
 
-            # 靜態標示評估結果，節省額外呼叫 Gemini 的 API 額度
             if "此藥丸非慢性病用藥" in base_result_text or "無法偵測" in base_result_text:
                 similarity_score = "0% (未收錄)"
                 reasoning = "該藥丸不在慢性病知識庫範圍內"
