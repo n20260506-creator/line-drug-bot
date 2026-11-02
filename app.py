@@ -7,6 +7,7 @@ import threading
 from flask import Flask, request, abort
 from PIL import Image
 from datetime import datetime, timezone, timedelta
+from pypdf import PdfReader
 
 # 引入 LINE SDK
 from linebot.v3 import WebhookHandler
@@ -144,19 +145,39 @@ def get_sheets_client():
 
 get_sheets_client()
 
-# ==================== [RAG 慢性病知識庫預載] ====================
-RAG_KNOWLEDGE_BASE = ""
-TXT_PATH = "drug_guide.txt"
+# ==================== [RAG 核心：PDF 讀取與 Chunking 切片分割] ====================
+PDF_CHUNKS = []
+PDF_PATH = "drug_guide.pdf"
 
-try:
-    if os.path.exists(TXT_PATH):
-        with open(TXT_PATH, "r", encoding="utf-8") as f:
-            RAG_KNOWLEDGE_BASE = f.read()
-        print(f"[RAG系統] ➔ 成功載入慢性病藥品知識庫 TXT，共讀取 {len(RAG_KNOWLEDGE_BASE)} 字。")
-    else:
-        print(f"[RAG系統] ⚠️ 找不到 {TXT_PATH}，將使用通用醫學知識進行辨識。")
-except Exception as e:
-    print(f"[RAG系統] ❌ 讀取 TXT 知識庫失敗: {e}")
+def load_and_chunk_pdf(file_path):
+    """讀取 PDF 並依據藥物單位切割成多個文字區塊 (Chunks)"""
+    chunks = []
+    if not os.path.exists(file_path):
+        print(f"[RAG系統] ⚠️ 找不到 {file_path}，請確認檔案已放置在專案目錄下。")
+        return chunks
+
+    try:
+        reader = PdfReader(file_path)
+        full_text = ""
+        for page in reader.pages:
+            t = page.extract_text()
+            if t:
+                full_text += t + "\n"
+
+        # 依據「【藥物編號」進行區塊切割 (Chunking)
+        raw_items = full_text.split("【藥物編號")
+        for item in raw_items:
+            cleaned = item.strip()
+            if cleaned and any(k in cleaned for k in ["藥品名稱", "刻字", "適應症"]):
+                chunks.append(f"【藥物編號{cleaned}")
+
+        print(f"[RAG系統] ➔ 成功解析 PDF！已分割為 {len(chunks)} 個獨立藥品特徵區塊 (Chunks)。")
+    except Exception as e:
+        print(f"[RAG系統] ❌ 解析 PDF 發生錯誤: {e}")
+    return chunks
+
+# 系統啟動時執行 RAG 預先切割並常駐記憶體
+PDF_CHUNKS = load_and_chunk_pdf(PDF_PATH)
 
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
@@ -196,9 +217,9 @@ SYSTEM_INSTRUCTION = """
 
 【情況 B：如果是藥丸/藥片/膠囊照片（雙重檢驗原則）】
 1. 第一步（特徵擷取）：仔細辨認照片中藥丸正反兩面的刻字、英數代碼與顏色形狀。
-2. 第二步（檢索對照）：嚴格比對【常見慢性病藥品參考知識庫】。若刻字不符絕對不可張冠李戴！
+2. 第二步（檢索對照）：嚴格比對【常見慢性病藥品參考知識庫切割區塊】。若刻字不符絕對不可張冠李戴！
 3. 🚨 終止條件：
-- 若照片中的刻字或外觀在知識庫中找不到相符項目，請「嚴格且唯一」回傳以下文字，切勿輸出其他內容：
+- 若照片中的刻字或外觀在知識庫區塊中找不到相符項目，請「嚴格且唯一」回傳以下文字，切勿輸出其他內容：
 此藥丸非慢性病用藥，無法偵測
 4. 成功比對輸出格式（標題與內容必須換行，且不同標題之間必須空一行，文字力求精確簡煉）：
 💊 【慢性病藥丸辨識結果】
@@ -642,19 +663,28 @@ def handle_image_message(event):
             target_lang = LANGUAGE_MAP.get(lang, "繁體中文")
             t = UI_TEXTS.get(lang, UI_TEXTS["zh"])
             
+            # 將切割後的 PDF Chunks 格式化加入 Prompt
+            formatted_knowledge = "\n----------------------------------------\n".join(PDF_CHUNKS)
+            
             prompt_content = f"""
 請判斷這張照片是「藥袋」還是「藥丸/藥片/膠囊」。
 
-【常見慢性病藥品參考知識庫 (RAG Knowledge Base)】：
-{RAG_KNOWLEDGE_BASE}
+【常見慢性病藥品參考知識庫切割區塊 (RAG Chunks)】：
+以下是從慢性病專用手冊分割出的各藥品特徵區塊：
+{formatted_knowledge}
 
 【任務指示】：
 1. 如果是「藥袋」：請精確萃取藥袋上的藥品名稱、適應症、用法用量與注意事項。
-2. 如果是藥丸：請依據知識庫進行深度辨識。若非慢性病用藥，請回傳「此藥丸非慢性病用藥，無法偵測」。
+2. 如果是「藥丸/藥片/膠囊」：
+   - 請完全忽略照片周圍的格線、測量比例尺（如 cm、mm 刻度尺）、陰影或任何廠商英文水印。
+   - 提取藥丸關鍵字：仔細檢查照片中藥丸的幾何形狀、顏色以及正反面刻字代碼/數字標記。
+   - 將特徵與上方切割的各藥品區塊逐一比對。
+   - ⚠️ 若無法與任何區塊精確匹配，直接回傳：
+     此藥丸非慢性病用藥，無法偵測
 3. 請全程使用「{target_lang}」語言回覆，但請保持輸出的標題結構不變。
 """
             
-            candidate_models = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-1.5-flash']
+            candidate_models = ['gemini-2.5-flash', 'gemini-1.5-flash']
             response = None
             last_error = None
 
