@@ -661,7 +661,7 @@ def handle_image_message(event):
             user_id = event.source.user_id
             lang = user_language_prefs.get(user_id, "zh")
             target_lang = LANGUAGE_MAP.get(lang, "繁體中文")
-            t = UI_TEXTS.get(lang, UI_TEXTS["zh"])https://github.com/n20260506-creator/line-drug-bot/blob/main/app.py
+            t = UI_TEXTS.get(lang, UI_TEXTS["zh"])
             
             # 將切割後的 PDF Chunks 格式化加入 Prompt
             formatted_knowledge = "\n----------------------------------------\n".join(PDF_CHUNKS)
