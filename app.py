@@ -46,7 +46,7 @@ LANGUAGE_MAP = {
     "id": "Bahasa Indonesia"
 }
 
-# 多國語言 UI 文字對照表（嚴格將按鈕 label 控制在 20 個字元以內，防止 LINE 400 錯誤）
+# 多國語言 UI 文字對照表
 UI_TEXTS = {
     "zh": {
         "bag_title": "📋 藥袋資訊細節查詢",
@@ -665,7 +665,8 @@ def handle_image_message(event):
 3. 請全程使用「{target_lang}」語言回覆。
 """
             
-            candidate_models = ['gemini-2.5-flash', 'gemini-1.5-flash']
+            # 使用官方支援的當前模型名稱
+            candidate_models = ['gemini-2.5-flash', 'gemini-2.0-flash']
             response = None
             last_error = None
 
@@ -679,14 +680,15 @@ def handle_image_message(event):
                             temperature=0.1
                         ),
                     )
-                    if response:
+                    if response and response.text:
                         break
                 except Exception as err:
                     last_error = err
+                    print(f"⚠️ [模型嘗試失敗] {model_name} ➔ {err}")
                     time.sleep(1)
 
-            if not response:
-                raise last_error
+            if not response or not response.text:
+                raise last_error if last_error else Exception("No response generated")
 
             base_result_text = response.text.strip()
             user_pending_data[user_id] = base_result_text
@@ -695,18 +697,19 @@ def handle_image_message(event):
             reasoning = "已完成系統檢核"
             metric_title = "•系統解析完整度"
 
-            if "此藥丸非慢性病用藥，無法偵測" in base_result_text:
-                similarity_score = "0% (未收錄)"
-                reasoning = "該藥丸不在慢性病知識庫範圍內"
-                metric_title = "與慢性病藥品匹配度"
-            elif "📋 【藥袋辨識結果】" in base_result_text:
-                metric_title = "圖文忠實度與準確度"
-                bag_eval_prompt = f"""
+            # 安全區隔：裁判評估失敗時不會覆蓋掉主要的辨識結果
+            try:
+                if "此藥丸非慢性病用藥，無法偵測" in base_result_text:
+                    similarity_score = "0% (未收錄)"
+                    reasoning = "該藥丸不在慢性病知識庫範圍內"
+                    metric_title = "與慢性病藥品匹配度"
+                elif "📋 【藥袋辨識結果】" in base_result_text:
+                    metric_title = "圖文忠實度與準確度"
+                    bag_eval_prompt = f"""
 你是一位嚴格的醫療 RAG 系統評估裁判。請同時檢視【原始上傳的藥袋圖片】與下方【AI 辨識出的藥袋結果】，評估其忠實度與準確度。
 【AI 辨識回答】：{base_result_text}
 請輸出 JSON 格式：{{"score": "95%", "reason": "無幻覺"}}
 """
-                try:
                     eval_response = ai_client.models.generate_content(
                         model='gemini-2.5-flash',
                         contents=[img, bag_eval_prompt], 
@@ -715,21 +718,18 @@ def handle_image_message(event):
                             temperature=0.0
                         )
                     )
-                    eval_json = json.loads(eval_response.text)
-                    similarity_score = eval_json.get("score", "94%")
-                    reasoning = eval_json.get("reason", "")
-                except Exception:
-                    similarity_score = "N/A"
-                    reasoning = "動態評估略過"
-            else:
-                metric_title = "資訊準確度與相似度"
-                pill_eval_prompt = f"""
+                    if eval_response and eval_response.text:
+                        eval_json = json.loads(eval_response.text)
+                        similarity_score = eval_json.get("score", "94%")
+                        reasoning = eval_json.get("reason", "")
+                else:
+                    metric_title = "資訊準確度與相似度"
+                    pill_eval_prompt = f"""
 你是一位嚴格的醫療 RAG 系統評估裁判。請比對【知識庫】與【AI辨識回答】，評估忠實度。
 【知識庫】：{RAG_KNOWLEDGE_BASE}
 【回答】：{base_result_text}
 請輸出 JSON 格式：{{"score": "95%", "reason": "完全對應"}}
 """
-                try:
                     eval_response = ai_client.models.generate_content(
                         model='gemini-2.5-flash',
                         contents=pill_eval_prompt,
@@ -738,12 +738,14 @@ def handle_image_message(event):
                             temperature=0.0
                         )
                     )
-                    eval_json = json.loads(eval_response.text)
-                    similarity_score = eval_json.get("score", "95%")
-                    reasoning = eval_json.get("reason", "")
-                except Exception:
-                    similarity_score = "N/A"
-                    reasoning = "動態評估略過"
+                    if eval_response and eval_response.text:
+                        eval_json = json.loads(eval_response.text)
+                        similarity_score = eval_json.get("score", "95%")
+                        reasoning = eval_json.get("reason", "")
+            except Exception as eval_err:
+                print(f"⚠️ [動態 RAG 評估過濾跳過] ➔ {eval_err}")
+                similarity_score = "N/A"
+                reasoning = "動態評估略過"
 
             result_text = f"{base_result_text}\n\n📊 【RAG 系統評估指標】\n━━━━━━━━━━━━━━\n• {metric_title}：{similarity_score}\n• 檢核說明：{reasoning}\n━━━━━━━━━━━━━━"
 
