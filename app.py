@@ -180,19 +180,19 @@ SYSTEM_INSTRUCTION = """
 2. 必須嚴格遵守以下格式，標題與回答內容必須強制換行，且「回答內容與下一個標題之間必須空一行」：
 📋 【藥袋辨識結果】
 ━━━━━━━━━━━━━━
-【藥品名稱】：
+【藥品名稱 / Nama Obat】：
 [帶入藥品名稱]
 
-【適應症/用途】：
+【適應症/用途 / Kegunaan】：
 [帶入適應症/用途]
 
-【用法用量】：
+【用法用量 / Aturan Pakai】：
 [帶入用法用量]
 
-【副作用】：
+【副作用 / Efek Samping】：
 [帶入副作用]
 
-【注意事項】：
+【注意事項 / Perhatian】：
 [帶入注意事項]
 ━━━━━━━━━━━━━━
 💡 提示：本系統辨識結果僅供參考，用藥前請務必再次核對藥袋，並遵照醫囑。
@@ -232,37 +232,36 @@ SYSTEM_INSTRUCTION = """
 
 def extract_section(text, keyword):
     try:
-        # 同義關鍵字對照表（全面補齊 中文 / 英文 / 印尼文 各種 AI 生成變體）
+        # 同義關鍵字對照表（完整對應中、英、印尼文各類標題變體）
         synonyms = {
             "藥品名稱": [
-                "藥品名稱", "可能藥品名稱",
+                "藥品名稱", "可能藥品名稱", "nama obat",
                 "drug name", "possible drug name", "name of drug", "medicine name",
-                "nama obat", "kemungkinan nama obat", "nama obat-obatan"
+                "kemungkinan nama obat", "nama obat-obatan"
             ],
             "慢性病分類": [
-                "慢性病分類",
+                "慢性病分類", "kategori penyakit kronis",
                 "chronic disease category", "disease category", "category",
-                "kategori penyakit kronis", "kategori penyakit", "kategori"
+                "kategori penyakit", "kategori"
             ],
             "適應症/用途": [
                 "適應症/用途", "主要適應症/用途", "適應症", "用途",
-                "indications/uses", "main indications/uses", "indications", "uses", "indication", "purpose",
-                "indikasi/kegunaan", "indikasi utama", "indikasi", "kegunaan", "kegunaan obat", "indikasi & kegunaan"
+                "kegunaan", "indikasi", "kegunaan obat", "indikasi utama", "indikasi & kegunaan", "kegunaan/indikasi",
+                "indications/uses", "main indications/uses", "indications", "uses", "indication", "purpose"
             ],
             "用法用量": [
                 "用法用量", "一般常見用法", "用法", "用量",
-                "dosage and administration", "general dosage", "dosage & usage", "dosage", "usage", "common dosage",
-                "dosis dan penggunaan", "dosis umum", "dosis", "cara pakai", "aturan pakai"
+                "aturan pakai", "dosis", "dosis dan penggunaan", "dosis umum", "cara pakai",
+                "dosage and administration", "general dosage", "dosage & usage", "dosage", "usage", "common dosage"
             ],
             "副作用": [
-                "副作用",
-                "side effects", "side effect",
-                "efek samping"
+                "副作用", "efek samping",
+                "side effects", "side effect"
             ],
             "注意事項": [
                 "注意事項", "服用注意事項與警語", "注意事項與警語", "警語",
-                "precautions", "warnings", "precautions and warnings", "precautions & warnings",
-                "peringatan dan perhatian", "peringatan", "perhatian", "hal yang perlu diperhatikan"
+                "perhatian", "peringatan", "peringatan dan perhatian", "hal yang perlu diperhatikan",
+                "precautions", "warnings", "precautions and warnings", "precautions & warnings"
             ]
         }
 
