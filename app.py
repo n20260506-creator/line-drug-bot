@@ -180,19 +180,19 @@ SYSTEM_INSTRUCTION = """
 2. 必須嚴格遵守以下格式，標題與回答內容必須強制換行，且「回答內容與下一個標題之間必須空一行」：
 📋 【藥袋辨識結果】
 ━━━━━━━━━━━━━━
-【藥品名稱 / Nama Obat】：
+【藥品名稱】：
 [帶入藥品名稱]
 
-【適應症/用途 / Kegunaan】：
+【適應症/用途】：
 [帶入適應症/用途]
 
-【用法用量 / Aturan Pakai】：
+【用法用量】：
 [帶入用法用量]
 
-【副作用 / Efek Samping】：
+【副作用】：
 [帶入副作用]
 
-【注意事項 / Perhatian】：
+【注意事項】：
 [帶入注意事項]
 ━━━━━━━━━━━━━━
 💡 提示：本系統辨識結果僅供參考，用藥前請務必再次核對藥袋，並遵照醫囑。
@@ -232,72 +232,50 @@ SYSTEM_INSTRUCTION = """
 
 def extract_section(text, keyword):
     try:
-        # 同義關鍵字對照表（完整對應中、英、印尼文各類標題變體）
-        synonyms = {
+        synonyms_map = {
             "藥品名稱": [
-                "藥品名稱", "可能藥品名稱", "nama obat",
-                "drug name", "possible drug name", "name of drug", "medicine name",
+                "藥品名稱", "可能藥品名稱", "nama obat", 
+                "drug name", "possible drug name", "name of drug", "medicine name", 
                 "kemungkinan nama obat", "nama obat-obatan"
             ],
             "慢性病分類": [
-                "慢性病分類", "kategori penyakit kronis",
-                "chronic disease category", "disease category", "category",
+                "慢性病分類", "kategori penyakit kronis", 
+                "chronic disease category", "disease category", "category", 
                 "kategori penyakit", "kategori"
             ],
             "適應症/用途": [
-                "適應症/用途", "主要適應症/用途", "適應症", "用途",
+                "適應症/用途", "主要適應症/用途", "適應症", "用途", 
                 "kegunaan", "indikasi", "kegunaan obat", "indikasi utama", "indikasi & kegunaan", "kegunaan/indikasi",
                 "indications/uses", "main indications/uses", "indications", "uses", "indication", "purpose"
             ],
             "用法用量": [
-                "用法用量", "一般常見用法", "用法", "用量",
-                "aturan pakai", "dosis", "dosis dan penggunaan", "dosis umum", "cara pakai",
+                "用法用量", "一般常見用法", "用法", "用量", 
+                "aturan pakai", "dosis", "dosis dan penggunaan", "dosis umum", "cara pakai", 
                 "dosage and administration", "general dosage", "dosage & usage", "dosage", "usage", "common dosage"
             ],
             "副作用": [
-                "副作用", "efek samping",
+                "副作用", "efek samping", 
                 "side effects", "side effect"
             ],
             "注意事項": [
-                "注意事項", "服用注意事項與警語", "注意事項與警語", "警語",
-                "perhatian", "peringatan", "peringatan dan perhatian", "hal yang perlu diperhatikan",
+                "注意事項", "服用注意事項與警語", "注意事項與警語", "警語", 
+                "perhatian", "peringatan", "peringatan dan perhatian", "hal yang perlu diperhatikan", 
                 "precautions", "warnings", "precautions and warnings", "precautions & warnings"
             ]
         }
 
-        targets = synonyms.get(keyword, [keyword])
-        lines = text.split('\n')
-        capturing = False
-        result = []
+        targets = synonyms_map.get(keyword, [keyword])
+        
+        for target in targets:
+            pattern = rf'(?:【|\[)?\s*{re.escape(target)}\s*(?:】|\])?\s*[:：]?\s*\n?(.*?)(?=(?:【|\[)?\s*(?:藥品名稱|可能藥品名稱|慢性病分類|適應症|用途|用法用量|副作用|注意事項|nama obat|kegunaan|indikasi|aturan pakai|dosis|efek samping|perhatian|peringatan)|$)'
+            match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+            if match:
+                val = match.group(1).strip()
+                val = re.sub(r'[-—]{3,}', '', val).strip()
+                if val and not val.startswith('[') and val != "（未標示 / Not specified）":
+                    return val
 
-        for line in lines:
-            clean_line = line.strip()
-            if not clean_line:
-                continue
-
-            line_lower = clean_line.lower()
-            is_match = any(t.lower() in line_lower for t in targets)
-
-            if capturing:
-                if any(clean_line.startswith(prefix) for prefix in ['【', '[', '━━', '📋', '💊', '💡', '⚠️']):
-                    if not is_match:
-                        break
-
-            if is_match:
-                capturing = True
-                parts = re.split(r'[:：]', clean_line, maxsplit=1)
-                if len(parts) > 1 and parts[1].strip():
-                    val = parts[1].strip().lstrip(']').strip()
-                    if val and not val.startswith("["):
-                        result.append(val)
-                continue
-
-            if capturing:
-                if not any(clean_line.startswith(prefix) for prefix in ['━━━━━━━━━━━━━━', '📋', '💊']):
-                    result.append(clean_line)
-
-        final_text = "\n".join(result).strip()
-        return final_text if final_text else "（未標示 / Not specified）"
+        return "（未標示 / Not specified）"
 
     except Exception as e:
         print(f"❌ [extract_section 解析失敗] ➔ {e}")
