@@ -84,7 +84,7 @@ UI_TEXTS = {
         "btn_dose": "⏰ Dosage",
         "btn_pill_dose": "⏰ Common Dose",
         "btn_side_effect": "🧪 Side Effects",
-        "warning_title": "⚠️ 【Precautions】",
+        "warning_title": "⚠️ 【Precautions & Warnings】",
         "history_title": "📋 【{period}】Logs",
         "history_subtitle": "Total {count} records found",
         "history_empty": "No records found for ({period})!",
@@ -104,7 +104,7 @@ UI_TEXTS = {
         "btn_dose": "⏰ Dosis",
         "btn_pill_dose": "⏰ Dosis Umum",
         "btn_side_effect": "🧪 Efek Samping",
-        "warning_title": "⚠️ 【Peringatan】",
+        "warning_title": "⚠️ 【Peringatan & Perhatian】",
         "history_title": "📋 Catatan 【{period}】",
         "history_subtitle": "Total {count} catatan",
         "history_empty": "Tidak ada catatan untuk ({period})!",
@@ -142,10 +142,9 @@ def get_sheets_client():
         print(f"[Sheets系統] ❌ 連線失敗: {e}")
         return None
 
-# 初始化連線
 get_sheets_client()
 
-# ==================== [RAG 慢性病知識庫預載 (純文字檔)] ====================
+# ==================== [RAG 慢性病知識庫預載] ====================
 RAG_KNOWLEDGE_BASE = ""
 TXT_PATH = "drug_guide.txt"
 
@@ -159,7 +158,6 @@ try:
 except Exception as e:
     print(f"[RAG系統] ❌ 讀取 TXT 知識庫失敗: {e}")
 
-# 讀取環境變數
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
@@ -168,7 +166,6 @@ configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 ai_client = genai.Client(api_key=GOOGLE_API_KEY)
 
-# ==================== [AI 系統指令] ====================
 SYSTEM_INSTRUCTION = """
 你是一位擁有極高辨識精準度的「慢性病藥丸與藥袋審核專家」。
 使用者上傳的照片可能是「藥袋」或「藥丸/藥片/膠囊」。
@@ -294,7 +291,6 @@ def send_delay_reminder(user_id):
         except Exception as e:
             print(f"❌ [提醒發送失敗] ➔ {e}")
 
-# ==================== [多語系 Flex Message 歷史紀錄卡片] ====================
 def build_history_flex(records, period_title, lang="zh"):
     t = UI_TEXTS.get(lang, UI_TEXTS["zh"])
     formatted_title = t["history_title"].format(period=period_title)
@@ -415,16 +411,16 @@ def handle_postback(event):
 
             if view_type == "name":
                 val = extract_section(stored_data, "藥品名稱")
-                reply_msg = f"{t['btn_name']}：\n{val}\n\n{t['warning_title']}：\n{warning_info}"
+                reply_msg = f"{t['btn_name']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             elif view_type == "usage":
                 val = extract_section(stored_data, "適應症/用途")
-                reply_msg = f"{t['btn_usage']}：\n{val}\n\n{t['warning_title']}：\n{warning_info}"
+                reply_msg = f"{t['btn_usage']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             elif view_type == "dose":
                 val = extract_section(stored_data, "用法用量")
-                reply_msg = f"{t['btn_dose']}：\n{val}\n\n{t['warning_title']}：\n{warning_info}"
+                reply_msg = f"{t['btn_dose']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             elif view_type == "side_effect":
                 val = extract_section(stored_data, "副作用")
-                reply_msg = f"{t['btn_side_effect']}：\n{val}\n\n{t['warning_title']}：\n{warning_info}"
+                reply_msg = f"{t['btn_side_effect']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             else:
                 reply_msg = stored_data
 
@@ -442,16 +438,16 @@ def handle_postback(event):
 
             if view_type == "name":
                 val = extract_section(stored_data, "藥品名稱")
-                reply_msg = f"{t['btn_pill_name']}：\n{val}\n\n{t['warning_title']}：\n{warning_info}"
+                reply_msg = f"{t['btn_pill_name']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             elif view_type == "category":
                 val = extract_section(stored_data, "慢性病分類")
-                reply_msg = f"{t['btn_category']}：\n{val}\n\n{t['warning_title']}：\n{warning_info}"
+                reply_msg = f"{t['btn_category']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             elif view_type == "usage":
                 val = extract_section(stored_data, "適應症/用途")
-                reply_msg = f"{t['btn_pill_usage']}：\n{val}\n\n{t['warning_title']}：\n{warning_info}"
+                reply_msg = f"{t['btn_pill_usage']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             elif view_type == "dose":
                 val = extract_section(stored_data, "用法用量")
-                reply_msg = f"{t['btn_pill_dose']}：\n{val}\n\n{t['warning_title']}：\n{warning_info}"
+                reply_msg = f"{t['btn_pill_dose']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             else:
                 reply_msg = stored_data
 
