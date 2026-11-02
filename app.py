@@ -661,7 +661,7 @@ def handle_image_message(event):
             user_id = event.source.user_id
             lang = user_language_prefs.get(user_id, "zh")
             target_lang = LANGUAGE_MAP.get(lang, "繁體中文")
-            t = UI_TEXTS.get(lang, UI_TEXTS["zh"])
+            t = UI_TEXTS.get(lang, UI_TEXTS["zh"])https://github.com/n20260506-creator/line-drug-bot/blob/main/app.py
             
             # 將切割後的 PDF Chunks 格式化加入 Prompt
             formatted_knowledge = "\n----------------------------------------\n".join(PDF_CHUNKS)
@@ -676,10 +676,11 @@ def handle_image_message(event):
 【任務指示】：
 1. 如果是「藥袋」：請精確萃取藥袋上的藥品名稱、適應症、用法用量與注意事項。
 2. 如果是「藥丸/藥片/膠囊」：
-   - 請完全忽略照片周圍的格線、測量比例尺（如 cm、mm 刻度尺）、陰影或任何廠商英文水印。
-   - 提取藥丸關鍵字：仔細檢查照片中藥丸的幾何形狀、顏色以及正反面刻字代碼/數字標記。
-   - 將特徵與上方切割的各藥品區塊逐一比對。
-   - ⚠️ 若無法與任何區塊精確匹配，直接回傳：
+  - 忽略干擾：請完全忽略外圍黑白測量尺（cm、mm 刻度線）、陰影或廠商字樣。
+   - 提取刻字與特徵：檢查藥丸形狀、顏色，以及表面刻印的英數代碼（例如：04、557、ATV 40、AML 5、100、GS 21C 等）。
+   - 劑量代碼對應規則：請注意藥品刻字常省略小數點（例如刻「04」即代表 0.4mg 規格之活路利淨 Harnalidge）。
+   - 比對知識庫：若藥丸顏色、形狀與上述代碼符合知識庫中任一藥品區塊，即判定為命中，輸出【慢性病藥丸辨識結果】。
+   - ⚠️ 若在知識庫中完全找不到相符的藥品或刻字，才回傳：
      此藥丸非慢性病用藥，無法偵測
 3. 請全程使用「{target_lang}」語言回覆，但請保持輸出的標題結構不變。
 """
