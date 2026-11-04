@@ -587,7 +587,6 @@ def handle_image_message(event):
             
             formatted_knowledge = "\n----------------------------------------\n".join(PDF_CHUNKS)
             
-            # 【完美架構】：第一階段顯示乾淨純繁體中文，並在底部附帶隱藏 JSON 供多語系按鈕切換
             prompt_content = f"""
 請判斷這張照片是「藥袋」還是「藥丸/藥片/膠囊」。
 
@@ -660,7 +659,6 @@ candidate_models = ['gemini-2.5-flash', 'gemini-1.5-flash']
         stored_full_text = response.text.strip()
         user_pending_data[user_id] = stored_full_text
 
-        # 第一階段回傳給使用者的文字（自動過濾掉隱藏的 JSON 區塊，保持畫面乾淨）
         result_text = get_clean_display_text(stored_full_text)
         base_result_text = stored_full_text
 
@@ -670,50 +668,50 @@ candidate_models = ['gemini-2.5-flash', 'gemini-1.5-flash']
         base_result_text = result_text
 
     try:
-            messages_to_send = [TextMessage(text=result_text)]
-            if "此藥丸非慢性病用藥" not in base_result_text and "❌ 辨識失敗" not in result_text:
-                lang = user_language_prefs.get(user_id, "zh")
-                t = UI_TEXTS.get(lang, UI_TEXTS["zh"])
-                
-                if any(k in base_result_text for k in ["📋 【藥袋辨識結果】"]):
-                    menu_template = TemplateMessage(
-                        alt_text=t["alt_menu"],
-                        template=ButtonsTemplate(
-                            title=t["bag_title"],
-                            text=t["btn_prompt"],
-                            actions=[
-                                PostbackAction(label=t["btn_name"], data="view_bag=name"),
-                                PostbackAction(label=t["btn_usage"], data="view_bag=usage"),
-                                PostbackAction(label=t["btn_dose"], data="view_bag=dose"),
-                                PostbackAction(label=t["btn_side_effect"], data="view_bag=side_effect")
-                            ]
-                        )
+        messages_to_send = [TextMessage(text=result_text)]
+        if "此藥丸非慢性病用藥" not in base_result_text and "❌ 辨識失敗" not in result_text:
+            lang = user_language_prefs.get(user_id, "zh")
+            t = UI_TEXTS.get(lang, UI_TEXTS["zh"])
+            
+            if any(k in base_result_text for k in ["📋 【藥袋辨識結果】"]):
+                menu_template = TemplateMessage(
+                    alt_text=t["alt_menu"],
+                    template=ButtonsTemplate(
+                        title=t["bag_title"],
+                        text=t["btn_prompt"],
+                        actions=[
+                            PostbackAction(label=t["btn_name"], data="view_bag=name"),
+                            PostbackAction(label=t["btn_usage"], data="view_bag=usage"),
+                            PostbackAction(label=t["btn_dose"], data="view_bag=dose"),
+                            PostbackAction(label=t["btn_side_effect"], data="view_bag=side_effect")
+                        ]
                     )
-                else:
-                    menu_template = TemplateMessage(
-                        alt_text=t["alt_menu"],
-                        template=ButtonsTemplate(
-                            title=t["pill_title"],
-                            text=t["btn_prompt"],
-                            actions=[
-                                PostbackAction(label=t["btn_pill_name"], data="view_pill=name"),
-                                PostbackAction(label=t["btn_category"], data="view_pill=category"),
-                                PostbackAction(label=t["btn_pill_usage"], data="view_pill=usage"),
-                                PostbackAction(label=t["btn_pill_dose"], data="view_pill=dose")
-                            ]
-                        )
-                    )
-                messages_to_send.append(menu_template)
-
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=messages_to_send
                 )
-            )
-        except Exception as reply_error:
-            print(f"❌ [回傳失敗] ➔ {reply_error}")
+            else:
+                menu_template = TemplateMessage(
+                    alt_text=t["alt_menu"],
+                    template=ButtonsTemplate(
+                        title=t["pill_title"],
+                        text=t["btn_prompt"],
+                        actions=[
+                            PostbackAction(label=t["btn_pill_name"], data="view_pill=name"),
+                            PostbackAction(label=t["btn_category"], data="view_pill=category"),
+                            PostbackAction(label=t["btn_pill_usage"], data="view_pill=usage"),
+                            PostbackAction(label=t["btn_pill_dose"], data="view_pill=dose")
+                        ]
+                    )
+                )
+            messages_to_send.append(menu_template)
 
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+        line_bot_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=messages_to_send
+            )
+        )
+    except Exception as reply_error:
+        print(f"❌ [回傳失敗] ➔ {reply_error}")
+
+if name == 'main':
+port = int(os.environ.get("PORT", 5000))
+app.run(host='0.0.0.0', port=port)
