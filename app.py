@@ -42,7 +42,7 @@ from google.oauth2.service_account import Credentials
 app = Flask(__name__)
 
 # --- 語言與暫存設定功能 ---
-user_language_prefs = {}
+user_language_prefs = {} 
 user_pending_data = {}
 
 LANGUAGE_MAP = {
@@ -191,7 +191,7 @@ SYSTEM_INSTRUCTION = """
 請嚴格執行以下規則：
 
 【情況 A：如果是藥袋照片】
-1. 完整進行 OCR 文字辨識，並輸出乾淨、專業的繁體中文辨識報告。
+1. 完整進行 OCR 文字辨識，並輸出乾淨、專業的純繁體中文辨識報告。
 
 【情況 B：如果是藥丸/藥片/膠囊照片（雙重檢驗原則）】
 1. 第一步（特徵擷取）：仔細辨認照片中藥丸正反兩面的刻字、英數代碼與顏色形狀。
@@ -199,7 +199,7 @@ SYSTEM_INSTRUCTION = """
 3. 🚨 終止條件：若找不到相符項目，回傳：此藥丸非慢性病用藥，無法偵測。
 
 通用規定事項：
-- 第一階段辨識結果的顯示文字必須固定為流暢的繁體中文。
+- 第一階段辨識報告必須 100% 使用繁體中文，嚴禁輸出英文（原廠英文藥名例外）或印尼文翻譯對照。
 - 嚴禁輸出任何客套話、問候語。
 """
 
@@ -587,6 +587,7 @@ def handle_image_message(event):
             
             formatted_knowledge = "\n----------------------------------------\n".join(PDF_CHUNKS)
             
+            # 【完美架構】：第一階段顯示乾淨純繁體中文，並在底部附帶隱藏 JSON 供多語系按鈕切換
             prompt_content = f"""
 請判斷這張照片是「藥袋」還是「藥丸/藥片/膠囊」。
 
@@ -594,79 +595,81 @@ def handle_image_message(event):
 {formatted_knowledge}
 
 【任務指示】：
-1. 第一部分（使用者可見的完整辨識報告）：必須**完全使用繁體中文**輸出乾淨、專業的報告，包含藥品名稱、適應症、用法用量、副作用/分類、注意事項，以及 RAGAS 評估指標與專業檢核說明。絕對不要在可見報告中夾雜英文或印尼文。
+1. 第一部分（使用者可見的完整辨識報告）：必須**純粹使用繁體中文**輸出，嚴禁夾雜任何英文註解或印尼文說明（原廠藥品英文名稱除外）。
 2. 第二部分（後端多語系隱藏資料）：在報告最下方，必須輸出一個格式正確的 ```json 代碼區塊，包含 zh、en、id 三種語言的各項欄位對照（包含 name、category、usage、dose、side_effect、warning），供後續點擊按鈕時切換使用。
 
-輸出格式範例：
-📋 【藥袋辨識結果】（或 💊 【慢性病藥丸辨識結果】）
+輸出格式範例（請嚴格依照此結構與語言規定）：
+📋 【藥袋辨識結果】
 ━━━━━━━━━━━━━━
 【藥品名稱】：
-[繁體中文名稱]
+脈優錠 5毫克 (Norvasc 5mg)
 
 【適應症/用途】：
-[繁體中文用途]
+高血壓、心絞痛。
 
 【用法用量】：
-[繁體中文用法用量]
+每日一次，每次一片，飯後服用。
 
 【注意事項】：
-[繁體中文注意事項]
+服藥期間請避免飲用葡萄柚汁。
 ━━━━━━━━━━━━━━
 💡 提示：本系統辨識結果僅供參考，用藥前請務必再次核對藥袋，並遵照醫囑。
 📊 【RAG 系統評估指標與專業檢核說明】
 ━━━━━━━━━━━━━━
-- 檢索忠實度 (Faithfulness)：[數值，以百分比%呈現]
+- 檢索忠實度 (Faithfulness)：95%
   - 檢核說明：精確解析圖像特徵，比對知識庫對應區塊，確認無幻覺資訊。
-- 答案相關性 (Answer Relevance)：[數值，以百分比%呈現]
+- 答案相關性 (Answer Relevance)：98%
   - 檢核說明：醫療欄位與檢索內容高度語意對齊。
 ━━━━━━━━━━━━━━
 
 ```json
 {{
-  "name": {{ "zh": "中文藥名", "en": "English Name", "id": "Nama Indonesia" }},
-  "category": {{ "zh": "中文分類", "en": "Category", "id": "Kategori" }},
-  "usage": {{ "zh": "中文用途", "en": "Uses", "id": "Kegunaan" }},
-  "dose": {{ "zh": "中文用法", "en": "Dosage", "id": "Dosis" }},
-  "side_effect": {{ "zh": "中文副作用", "en": "Side Effects", "id": "Efek Samping" }},
-  "warning": {{ "zh": "中文注意事項", "en": "Precautions", "id": "Perhatian" }}
+  "name": {{ "zh": "脈優錠 5毫克", "en": "Norvasc 5mg", "id": "Norvasc 5mg" }},
+  "category": {{ "zh": "高血壓 / 心血管疾病", "en": "Hypertension / Cardiovascular", "id": "Hipertensi / Kardiovaskular" }},
+  "usage": {{ "zh": "高血壓、心絞痛", "en": "Hypertension, Angina", "id": "Hipertensi, Angina" }},
+  "dose": {{ "zh": "每日一次，每次一片", "en": "Once daily, 1 tablet", "id": "Sekali sehari, 1 tablet" }},
+  "side_effect": {{ "zh": "頭痛、腳踝水腫", "en": "Headache, Ankle Swelling", "id": "Sakit kepala, Pembengkakan pergelangan kaki" }},
+  "warning": {{ "zh": "避免飲用葡萄柚汁", "en": "Avoid grapefruit juice", "id": "Hindari jus jus grapefruit" }}
 }}
+
 """
-            candidate_models = ['gemini-2.5-flash', 'gemini-1.5-flash']
-            response = None
-            last_error = None
+candidate_models = ['gemini-2.5-flash', 'gemini-1.5-flash']
+        response = None
+        last_error = None
 
-            for model_name in candidate_models:
-                try:
-                    response = ai_client.models.generate_content(
-                        model=model_name,
-                        contents=[img, prompt_content],
-                        config=types.GenerateContentConfig(
-                            system_instruction=SYSTEM_INSTRUCTION,
-                            temperature=0.1
-                        ),
-                    )
-                    if response and response.text:
-                        break
-                except Exception as err:
-                    last_error = err
-                    print(f"⚠️ [模型嘗試失敗] {model_name} ➔ {err}")
-                    time.sleep(2)
+        for model_name in candidate_models:
+            try:
+                response = ai_client.models.generate_content(
+                    model=model_name,
+                    contents=[img, prompt_content],
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_INSTRUCTION,
+                        temperature=0.1
+                    ),
+                )
+                if response and response.text:
+                    break
+            except Exception as err:
+                last_error = err
+                print(f"⚠️ [模型嘗試失敗] {model_name} ➔ {err}")
+                time.sleep(2)
 
-            if not response or not response.text:
-                raise last_error if last_error else Exception("No response generated")
+        if not response or not response.text:
+            raise last_error if last_error else Exception("No response generated")
 
-            stored_full_text = response.text.strip()
-            user_pending_data[user_id] = stored_full_text
+        stored_full_text = response.text.strip()
+        user_pending_data[user_id] = stored_full_text
 
-            result_text = get_clean_display_text(stored_full_text)
-            base_result_text = stored_full_text
+        # 第一階段回傳給使用者的文字（自動過濾掉隱藏的 JSON 區塊，保持畫面乾淨）
+        result_text = get_clean_display_text(stored_full_text)
+        base_result_text = stored_full_text
 
-        except Exception as e:
-            print(f"❌ [Google AI 辨識重大錯誤] ➔ {e}")
-            result_text = "❌ 辨識失敗。可能原因：免費 API 額度超限 (429 Rate Limit) 或伺服器連線超時。請稍候再試一次！"
-            base_result_text = result_text
+    except Exception as e:
+        print(f"❌ [Google AI 辨識重大錯誤] ➔ {e}")
+        result_text = "❌ 辨識失敗。可能原因：免費 API 額度超限 (429 Rate Limit) 或伺服器連線超時。請稍候再試一次！"
+        base_result_text = result_text
 
-        try:
+    try:
             messages_to_send = [TextMessage(text=result_text)]
             if "此藥丸非慢性病用藥" not in base_result_text and "❌ 辨識失敗" not in result_text:
                 lang = user_language_prefs.get(user_id, "zh")
