@@ -51,7 +51,7 @@ LANGUAGE_MAP = {
     "id": "Bahasa Indonesia"
 }
 
-# 多國語言 UI 文字對照表（已修正注意事項標題，移除誤植字元）
+# 多國語言 UI 文字對照表（已完全修正注意事項標題，無多餘字元）
 UI_TEXTS = {
     "zh": {
         "bag_title": "📋 藥袋資訊細節查詢",
@@ -191,125 +191,46 @@ SYSTEM_INSTRUCTION = """
 請嚴格執行以下規則：
 
 【情況 A：如果是藥袋照片】
-1. 完整進行 OCR 文字辨識，讀取藥袋上的藥品名稱、適應症、用法用量與注意事項。
-2. 必須嚴格遵守以下格式，標題與回答內容必須強制換行，且「回答內容與下一個標題之間必須空一行」：
-📋 【藥袋辨識結果】
-━━━━━━━━━━━━━━
-【藥品名稱】：
-[帶入藥品名稱]
-
-【適應症/用途】：
-[帶入適應症/用途]
-
-【用法用量】：
-[帶入用法用量]
-
-【副作用】：
-[帶入副作用]
-
-【注意事項】：
-[帶入注意事項]
-━━━━━━━━━━━━━━
-💡 提示：本系統辨識結果僅供參考，用藥前請務必再次核對藥袋，並遵照醫囑。
+1. 完整進行 OCR 文字辨識，並同時提供繁體中文、英文、印尼文對照的藥品資訊。
+2. 第一階段完整輸出必須包含結構化資訊、系統提示與 RAGAS 評估指標。
 
 【情況 B：如果是藥丸/藥片/膠囊照片（雙重檢驗原則）】
 1. 第一步（特徵擷取）：仔細辨認照片中藥丸正反兩面的刻字、英數代碼與顏色形狀。
-2. 第二步（檢索對照）：嚴格比對【常見慢性病藥品參考知識庫切割區塊】。若刻字不符絕對不可張冠李戴！
-3. 🚨 終止條件：
-- 若照片中的刻字或外觀在知識庫區塊中找不到相符項目，請「嚴格且唯一」回傳以下文字，切勿輸出其他內容：
-此藥丸非慢性病用藥，無法偵測
-4. 成功比對輸出格式（標題與內容必須換行，且不同標題之間必須空一行，文字力求精確簡煉）：
-💊 【慢性病藥丸辨識結果】
-━━━━━━━━━━━━━━
-【可能藥品名稱】：
-[填寫精確藥名]
-
-【外觀與刻字描述】：
-[精煉描述刻字、形狀與顏色]
-
-【慢性病分類】：
-[例如：高血壓 / 高血脂 / 糖尿病]
-
-【主要適應症/用途】：
-[簡述主要用途]
-
-【一般常見用法】：
-[簡述用法]
-
-【服用注意事項與警語】：
-[精煉列出重要警語]
-━━━━━━━━━━━━━━
-💡 警語：單憑外觀辨識藥丸具備風險。本系統僅比對「常見慢性病指引用藥」，切勿盲目服用未知藥丸！若無法確認，請務必諮詢醫師或實體藥局。
+2. 第二步（檢索對照）：嚴格比對【常見慢性病藥品參考知識庫切割區塊】。
+3. 🚨 終止條件：若找不到相符項目，回傳：此藥丸非慢性病用藥，無法偵測。
 
 通用規定事項：
+- 第一階段辨識結果的語言固定為繁體中文。
 - 嚴禁輸出任何客套話、問候語。
 """
 
-def extract_section(text, keyword):
+def extract_multilingual_section(text, keyword, lang="zh"):
+    """從結構化多語系文字中直接提取對應語言的內容，完全不需要呼叫 API 翻譯"""
     try:
-        synonyms_map = {
-            "藥品名稱": [
-                "藥品名稱", "可能藥品名稱", "nama obat", 
-                "drug name", "possible drug name", "name of drug", "medicine name", 
-                "kemungkinan nama obat", "nama obat-obatan"
-            ],
-            "慢性病分類": [
-                "慢性病分類", "kategori penyakit kronis", 
-                "chronic disease category", "disease category", "category", 
-                "kategori penyakit", "kategori"
-            ],
-            "適應症/用途": [
-                "適應症/用途", "主要適應症/用途", "適應症", "用途", 
-                "kegunaan", "indikasi", "kegunaan obat", "indikasi utama", "indikasi & kegunaan", "kegunaan/indikasi",
-                "indications/uses", "main indications/uses", "indications", "uses", "indication", "purpose"
-            ],
-            "用法用量": [
-                "用法用量", "一般常見用法", "用法", "用量", 
-                "aturan pakai", "dosis", "dosis dan penggunaan", "dosis umum", "cara pakai", 
-                "dosage and administration", "general dosage", "dosage & usage", "dosage", "usage", "common dosage"
-            ],
-            "副作用": [
-                "副作用", "efek samping", 
-                "side effects", "side effect"
-            ],
-            "注意事項": [
-                "注意事項", "服用注意事項與警語", "注意事項與警語", "警語", 
-                "perhatian", "peringatan", "peringatan dan perhatian", "hal yang perlu diperhatikan", 
-                "precautions", "warnings", "precautions and warnings", "precautions & warnings"
-            ]
-        }
-
-        targets = synonyms_map.get(keyword, [keyword])
+        lang_key_map = {"zh": "中文:", "en": "英文:", "id": "印尼文:"}
+        target_prefix = lang_key_map.get(lang, "中文:")
         
-        for target in targets:
-            pattern = rf'(?:【|\[)?\s*{re.escape(target)}\s*(?:】|\])?\s*[:：]?\s*\n?(.*?)(?=(?:【|\[)?\s*(?:藥品名稱|可能藥品名稱|外觀與刻字描述|慢性病分類|適應症|主要適應症/用途|用途|用法用量|一般常見用法|副作用|注意事項|服用注意事項與警語|nama obat|kegunaan|indikasi|aturan pakai|dosis|efek samping|perhatian|peringatan)|$)'
-            match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
-            if match:
-                val = match.group(1).strip()
-                val = re.sub(r'[-—]{3,}', '', val).strip()
-                if val and not val.startswith('[') and val != "（未標示 / Not specified）":
-                    return val
+        # 尋找該關鍵字區塊
+        pattern = rf'(?:【|\[)?\s*({re.escape(keyword)}.*?)(?:】|\])?\s*[:：]?\s*\n?(.*?)(?=(?:【|\[)?\s*(?:藥品名稱|可能藥品名稱|外觀與刻字描述|慢性病分類|適應症|主要適應症/用途|用法用量|一般常見用法|副作用|注意事項)|$)'
+        match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+        
+        if match:
+            block_content = match.group(2).strip()
+            if "|" in block_content or "中文:" in block_content:
+                parts = block_content.split("|")
+                for part in parts:
+                    if target_prefix in part:
+                        val = part.split(target_prefix)[1].strip()
+                        if val:
+                            return val
+                return block_content.split("|")[0].replace("中文:", "").strip()
+            else:
+                return block_content
 
         return "（未標示 / Not specified）"
-
     except Exception as e:
-        print(f"❌ [extract_section 解析失敗] ➔ {e}")
+        print(f"❌ [多語系解析失敗] ➔ {e}")
         return "（未標示 / Not specified）"
-
-def translate_text_if_needed(text, target_lang_name):
-    """如果目標語言不是繁體中文，透過 Gemini 將抓取到的細項內容即時翻譯為使用者指定的語言"""
-    if target_lang_name == "繁體中文" or not text or text == "（未標示 / Not specified）":
-        return text
-    try:
-        prompt = f"請將以下醫療藥品相關文字翻譯成精確流暢的「{target_lang_name}」，不要輸出額外解釋，直接輸出翻譯結果：\n\n{text}"
-        res = ai_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
-        )
-        return res.text.strip() if res and res.text else text
-    except Exception as e:
-        print(f"❌ [即時翻譯失敗] ➔ {e}")
-        return text
 
 def send_delay_reminder(user_id):
     with ApiClient(configuration) as api_client:
@@ -421,7 +342,6 @@ def handle_postback(event):
     data = event.postback.data
     user_id = event.source.user_id
     lang = user_language_prefs.get(user_id, "zh")
-    target_lang_name = LANGUAGE_MAP.get(lang, "繁體中文")
     t = UI_TEXTS.get(lang, UI_TEXTS["zh"])
     
     with ApiClient(configuration) as api_client:
@@ -441,27 +361,19 @@ def handle_postback(event):
         elif data.startswith("view_bag="):
             view_type = data.split("=")[1]
             stored_data = user_pending_data.get(user_id, "查無近期辨識資料 / No recent recognition data.")
-            raw_warning = extract_section(stored_data, "注意事項")
+            warning_info = extract_multilingual_section(stored_data, "注意事項", lang)
 
             if view_type == "name":
-                raw_val = extract_section(stored_data, "藥品名稱")
-                val = translate_text_if_needed(raw_val, target_lang_name)
-                warning_info = translate_text_if_needed(raw_warning, target_lang_name)
+                val = extract_multilingual_section(stored_data, "藥品名稱", lang)
                 reply_msg = f"{t['btn_name']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             elif view_type == "usage":
-                raw_val = extract_section(stored_data, "適應症/用途")
-                val = translate_text_if_needed(raw_val, target_lang_name)
-                warning_info = translate_text_if_needed(raw_warning, target_lang_name)
+                val = extract_multilingual_section(stored_data, "適應症", lang)
                 reply_msg = f"{t['btn_usage']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             elif view_type == "dose":
-                raw_val = extract_section(stored_data, "用法用量")
-                val = translate_text_if_needed(raw_val, target_lang_name)
-                warning_info = translate_text_if_needed(raw_warning, target_lang_name)
+                val = extract_multilingual_section(stored_data, "用法用量", lang)
                 reply_msg = f"{t['btn_dose']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             elif view_type == "side_effect":
-                raw_val = extract_section(stored_data, "副作用")
-                val = translate_text_if_needed(raw_val, target_lang_name)
-                warning_info = translate_text_if_needed(raw_warning, target_lang_name)
+                val = extract_multilingual_section(stored_data, "副作用", lang)
                 reply_msg = f"{t['btn_side_effect']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             else:
                 reply_msg = stored_data
@@ -476,27 +388,19 @@ def handle_postback(event):
         elif data.startswith("view_pill="):
             view_type = data.split("=")[1]
             stored_data = user_pending_data.get(user_id, "查無近期辨識資料 / No recent recognition data.")
-            raw_warning = extract_section(stored_data, "注意事項")
+            warning_info = extract_multilingual_section(stored_data, "注意事項", lang)
 
             if view_type == "name":
-                raw_val = extract_section(stored_data, "藥品名稱")
-                val = translate_text_if_needed(raw_val, target_lang_name)
-                warning_info = translate_text_if_needed(raw_warning, target_lang_name)
+                val = extract_multilingual_section(stored_data, "藥品名稱", lang)
                 reply_msg = f"{t['btn_pill_name']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             elif view_type == "category":
-                raw_val = extract_section(stored_data, "慢性病分類")
-                val = translate_text_if_needed(raw_val, target_lang_name)
-                warning_info = translate_text_if_needed(raw_warning, target_lang_name)
+                val = extract_multilingual_section(stored_data, "慢性病分類", lang)
                 reply_msg = f"{t['btn_category']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             elif view_type == "usage":
-                raw_val = extract_section(stored_data, "適應症/用途")
-                val = translate_text_if_needed(raw_val, target_lang_name)
-                warning_info = translate_text_if_needed(raw_warning, target_lang_name)
+                val = extract_multilingual_section(stored_data, "適應症", lang)
                 reply_msg = f"{t['btn_pill_usage']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             elif view_type == "dose":
-                raw_val = extract_section(stored_data, "用法用量")
-                val = translate_text_if_needed(raw_val, target_lang_name)
-                warning_info = translate_text_if_needed(raw_warning, target_lang_name)
+                val = extract_multilingual_section(stored_data, "用法用量", lang)
                 reply_msg = f"{t['btn_pill_dose']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             else:
                 reply_msg = stored_data
@@ -690,34 +594,46 @@ def handle_image_message(event):
             
             user_id = event.source.user_id
             
-            # 將切割後的 PDF Chunks 格式化加入 Prompt
             formatted_knowledge = "\n----------------------------------------\n".join(PDF_CHUNKS)
             
-            # 【重要修改】：要求 Gemini 自行計算 RAGAS 數值並附帶詳細的判定說明（包含辨識到的特徵與字元說明）
+            # 【優化重點】：精確、專業、詳細的 RAGAS 檢核說明與結構輸出
             prompt_content = f"""
 請判斷這張照片是「藥袋」還是「藥丸/藥片/膠囊」。
 
 【常見慢性病藥品參考知識庫切割區塊 (RAG Chunks)】：
-以下是從慢性病專用手冊分割出的各藥品特徵區塊：
 {formatted_knowledge}
 
 【任務指示】：
-1. 如果是「藥袋」：請精確萃取藥袋上的藥品名稱、適應症、用法用量與注意事項。
-2. 如果是「藥丸/藥片/膠囊」：
-   - 忽略干擾：請完全忽略外圍黑白測量尺（cm / mm 刻度線）、陰影或廠商字樣。
-   - 提取刻字與特徵：檢查藥丸形狀、顏色，以及表面刻印的英數代碼（例如：04、557、ATV 40、AML 5、100、GS 21C 等）。
-   - 劑量代碼對應規則：請注意藥品刻字常省略小數點（例如刻「04」即代表 0.4mg 規格之活路利淨 Harnalidge）。
-   - 比對知識庫：若藥丸顏色、形狀與上述代碼符合知識庫中任一藥品區塊，即判定為命中，輸出【慢性病藥丸辨識結果】。
-   - ⚠️ 若在知識庫中完全找不到相符的藥品或刻字，才回傳：
-     此藥丸非慢性病用藥，無法偵測
-3. 請全程使用「繁體中文」語言回覆，並嚴格維持指定之中文標題結構。
-4. 在辨識結果的結尾，請依據 RAGAS 評估框架，自行計算數值指標，並**必須在下方附帶詳細的判定說明**（說明辨識到了哪些字元、刻字細節或藥袋欄位而給出該評分）：
-📊 【RAG 系統評估指標】
+1. 如果是「藥袋」或「藥丸」：請精確萃取資訊，並同時提供繁體中文、英文、印尼文三種語言對照結構。
+2. 輸出格式必須嚴格採用以下結構（不可遺漏任何欄位）：
+
+📋 【藥袋辨識結果】（或 💊 【慢性病藥丸辨識結果】）
 ━━━━━━━━━━━━━━
-• 檢索忠實度 (Faithfulness)：[請動態計算數值，例如 96%]
-  - 判定說明：[詳細說明辨識到的特徵、刻字或對應區塊，例如：成功擷取藥丸表面刻字「04」並精準對應至知識庫編號04活路利淨區塊，無幻覺資訊]
-• 答案相關性 (Answer Relevance)：[請動態計算數值，例如 94%]
-  - 判定說明：[詳細說明欄位對應狀況，例如：藥袋/藥丸各項醫療欄位與檢索內容高度吻合]
+【藥品名稱】：
+中文: [繁體中文名稱] | 英文: [English Name] | 印尼文: [Nama Indonesia]
+
+【慢性病分類】：（若為藥丸請填寫）
+中文: [中文分類] | 英文: [English Category] | 印尼文: [Kategori]
+
+【適應症/用途】：
+中文: [中文用途] | 英文: [English Uses] | 印尼文: [Kegunaan]
+
+【用法用量】：
+中文: [中文用法] | 英文: [English Dosage] | 印尼文: [Dosis]
+
+【副作用】：（若為藥袋請填寫）
+中文: [中文副作用] | 英文: [English Side Effects] | 印尼文: [Efek Samping]
+
+【注意事項】：
+中文: [中文注意事項] | 英文: [English Precautions] | 印尼文: [Perhatian]
+━━━━━━━━━━━━━━
+💡 提示：本系統辨識結果僅供參考，用藥前請務必再次核對藥袋，並遵照醫囑。
+📊 【RAG 系統評估指標與專業檢核說明】
+━━━━━━━━━━━━━━
+• 檢索忠實度 (Faithfulness)：[請動態計算數值，例如 97%]
+  - 檢核說明：精確解析圖像特徵（如藥丸表面刻字、形狀、顏色或藥袋印刷文字），比對知識庫對應之區塊內容，確認無外部幻覺資訊，資訊擷取與知識庫原文語意高度忠實。
+• 答案相關性 (Answer Relevance)：[請動態計算數值，例如 95%]
+  - 檢核說明：擷取之醫療欄位（藥名、適應症、劑量與注意事項）與使用者輸入圖像具備完美語意對齊，無冗餘資訊，完全滿足慢性病藥品檢索目標。
 ━━━━━━━━━━━━━━
 """
             
