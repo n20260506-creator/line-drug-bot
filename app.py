@@ -636,7 +636,7 @@ def handle_image_message(event):
             response = None
             last_error = None
 
-            for model_name in candidate_models:
+        for model_name in candidate_models:
             try:
                 response = ai_client.models.generate_content(
                     model=model_name,
@@ -659,7 +659,6 @@ def handle_image_message(event):
         stored_full_text = response.text.strip()
         user_pending_data[user_id] = stored_full_text
 
-        # 過濾掉隱藏的 JSON 區塊，第一階段僅發送純繁體中文報告給使用者
         result_text = get_clean_display_text(stored_full_text)
         base_result_text = stored_full_text
 
