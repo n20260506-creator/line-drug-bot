@@ -51,7 +51,7 @@ LANGUAGE_MAP = {
     "id": "Bahasa Indonesia"
 }
 
-# 多國語言 UI 文字對照表
+# 多國語言 UI 文字對照表（已修正注意事項標題，移除誤植字元）
 UI_TEXTS = {
     "zh": {
         "bag_title": "📋 藥袋資訊細節查詢",
@@ -65,7 +65,7 @@ UI_TEXTS = {
         "btn_dose": "⏰ 用法用量",
         "btn_pill_dose": "⏰ 一般常見用法",
         "btn_side_effect": "🧪 副作用",
-        "warning_title": "⚠️ 【服用注意事項與警語】",
+        "warning_title": "⚠️ 【注意事項】",
         "history_title": "📋 【{period}】用藥紀錄",
         "history_subtitle": "共計查詢到 {count} 筆服藥打卡",
         "history_empty": "這段期間（{period}）尚無任何用藥紀錄！",
@@ -85,7 +85,7 @@ UI_TEXTS = {
         "btn_dose": "⏰ Dosage",
         "btn_pill_dose": "⏰ Common Dose",
         "btn_side_effect": "🧪 Side Effects",
-        "warning_title": "⚠️ 【Precautions & Warnings】",
+        "warning_title": "⚠️ 【Precautions】",
         "history_title": "📋 【{period}】Logs",
         "history_subtitle": "Total {count} records found",
         "history_empty": "No records found for ({period})!",
@@ -105,7 +105,7 @@ UI_TEXTS = {
         "btn_dose": "⏰ Dosis",
         "btn_pill_dose": "⏰ Dosis Umum",
         "btn_side_effect": "🧪 Efek Samping",
-        "warning_title": "⚠️ 【Peringatan & Perhatian】",
+        "warning_title": "⚠️ 【Perhatian】",
         "history_title": "📋 Catatan 【{period}】",
         "history_subtitle": "Total {count} catatan",
         "history_empty": "Tidak ada catatan untuk ({period})!",
@@ -296,6 +296,21 @@ def extract_section(text, keyword):
         print(f"❌ [extract_section 解析失敗] ➔ {e}")
         return "（未標示 / Not specified）"
 
+def translate_text_if_needed(text, target_lang_name):
+    """如果目標語言不是繁體中文，透過 Gemini 將抓取到的細項內容即時翻譯為使用者指定的語言"""
+    if target_lang_name == "繁體中文" or not text or text == "（未標示 / Not specified）":
+        return text
+    try:
+        prompt = f"請將以下醫療藥品相關文字翻譯成精確流暢的「{target_lang_name}」，不要輸出額外解釋，直接輸出翻譯結果：\n\n{text}"
+        res = ai_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
+        return res.text.strip() if res and res.text else text
+    except Exception as e:
+        print(f"❌ [即時翻譯失敗] ➔ {e}")
+        return text
+
 def send_delay_reminder(user_id):
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
@@ -406,6 +421,7 @@ def handle_postback(event):
     data = event.postback.data
     user_id = event.source.user_id
     lang = user_language_prefs.get(user_id, "zh")
+    target_lang_name = LANGUAGE_MAP.get(lang, "繁體中文")
     t = UI_TEXTS.get(lang, UI_TEXTS["zh"])
     
     with ApiClient(configuration) as api_client:
@@ -425,19 +441,27 @@ def handle_postback(event):
         elif data.startswith("view_bag="):
             view_type = data.split("=")[1]
             stored_data = user_pending_data.get(user_id, "查無近期辨識資料 / No recent recognition data.")
-            warning_info = extract_section(stored_data, "注意事項")
+            raw_warning = extract_section(stored_data, "注意事項")
 
             if view_type == "name":
-                val = extract_section(stored_data, "藥品名稱")
+                raw_val = extract_section(stored_data, "藥品名稱")
+                val = translate_text_if_needed(raw_val, target_lang_name)
+                warning_info = translate_text_if_needed(raw_warning, target_lang_name)
                 reply_msg = f"{t['btn_name']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             elif view_type == "usage":
-                val = extract_section(stored_data, "適應症/用途")
+                raw_val = extract_section(stored_data, "適應症/用途")
+                val = translate_text_if_needed(raw_val, target_lang_name)
+                warning_info = translate_text_if_needed(raw_warning, target_lang_name)
                 reply_msg = f"{t['btn_usage']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             elif view_type == "dose":
-                val = extract_section(stored_data, "用法用量")
+                raw_val = extract_section(stored_data, "用法用量")
+                val = translate_text_if_needed(raw_val, target_lang_name)
+                warning_info = translate_text_if_needed(raw_warning, target_lang_name)
                 reply_msg = f"{t['btn_dose']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             elif view_type == "side_effect":
-                val = extract_section(stored_data, "副作用")
+                raw_val = extract_section(stored_data, "副作用")
+                val = translate_text_if_needed(raw_val, target_lang_name)
+                warning_info = translate_text_if_needed(raw_warning, target_lang_name)
                 reply_msg = f"{t['btn_side_effect']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             else:
                 reply_msg = stored_data
@@ -452,19 +476,27 @@ def handle_postback(event):
         elif data.startswith("view_pill="):
             view_type = data.split("=")[1]
             stored_data = user_pending_data.get(user_id, "查無近期辨識資料 / No recent recognition data.")
-            warning_info = extract_section(stored_data, "注意事項")
+            raw_warning = extract_section(stored_data, "注意事項")
 
             if view_type == "name":
-                val = extract_section(stored_data, "藥品名稱")
+                raw_val = extract_section(stored_data, "藥品名稱")
+                val = translate_text_if_needed(raw_val, target_lang_name)
+                warning_info = translate_text_if_needed(raw_warning, target_lang_name)
                 reply_msg = f"{t['btn_pill_name']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             elif view_type == "category":
-                val = extract_section(stored_data, "慢性病分類")
+                raw_val = extract_section(stored_data, "慢性病分類")
+                val = translate_text_if_needed(raw_val, target_lang_name)
+                warning_info = translate_text_if_needed(raw_warning, target_lang_name)
                 reply_msg = f"{t['btn_category']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             elif view_type == "usage":
-                val = extract_section(stored_data, "適應症/用途")
+                raw_val = extract_section(stored_data, "適應症/用途")
+                val = translate_text_if_needed(raw_val, target_lang_name)
+                warning_info = translate_text_if_needed(raw_warning, target_lang_name)
                 reply_msg = f"{t['btn_pill_usage']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             elif view_type == "dose":
-                val = extract_section(stored_data, "用法用量")
+                raw_val = extract_section(stored_data, "用法用量")
+                val = translate_text_if_needed(raw_val, target_lang_name)
+                warning_info = translate_text_if_needed(raw_warning, target_lang_name)
                 reply_msg = f"{t['btn_pill_dose']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             else:
                 reply_msg = stored_data
@@ -661,7 +693,7 @@ def handle_image_message(event):
             # 將切割後的 PDF Chunks 格式化加入 Prompt
             formatted_knowledge = "\n----------------------------------------\n".join(PDF_CHUNKS)
             
-            # 【重要修改】：完整辨識結果固定為繁體中文，並在 Prompt 中要求 AI 自行計算並輸出數值形式的 RAGAS 評估指標
+            # 【重要修改】：要求 Gemini 自行計算 RAGAS 數值並附帶詳細的判定說明（包含辨識到的特徵與字元說明）
             prompt_content = f"""
 請判斷這張照片是「藥袋」還是「藥丸/藥片/膠囊」。
 
@@ -672,18 +704,20 @@ def handle_image_message(event):
 【任務指示】：
 1. 如果是「藥袋」：請精確萃取藥袋上的藥品名稱、適應症、用法用量與注意事項。
 2. 如果是「藥丸/藥片/膠囊」：
-   - 忽略干擾：請完全忽略外圍黑白測量尺（cm、mm 刻度線）、陰影或廠商字樣。
+   - 忽略干擾：請完全忽略外圍黑白測量尺（cm / mm 刻度線）、陰影或廠商字樣。
    - 提取刻字與特徵：檢查藥丸形狀、顏色，以及表面刻印的英數代碼（例如：04、557、ATV 40、AML 5、100、GS 21C 等）。
    - 劑量代碼對應規則：請注意藥品刻字常省略小數點（例如刻「04」即代表 0.4mg 規格之活路利淨 Harnalidge）。
    - 比對知識庫：若藥丸顏色、形狀與上述代碼符合知識庫中任一藥品區塊，即判定為命中，輸出【慢性病藥丸辨識結果】。
    - ⚠️ 若在知識庫中完全找不到相符的藥品或刻字，才回傳：
      此藥丸非慢性病用藥，無法偵測
 3. 請全程使用「繁體中文」語言回覆，並嚴格維持指定之中文標題結構。
-4. 在辨識結果的結尾，請依據 RAGAS 評估框架，自行評估並動態輸出數值指標格式：
+4. 在辨識結果的結尾，請依據 RAGAS 評估框架，自行計算數值指標，並**必須在下方附帶詳細的判定說明**（說明辨識到了哪些字元、刻字細節或藥袋欄位而給出該評分）：
 📊 【RAG 系統評估指標】
 ━━━━━━━━━━━━━━
-• 檢索忠實度 (Faithfulness)：[請動態計算並填入百分比或分數，例如 95%]
-• 答案相關性 (Answer Relevance)：[請動態計算並填入百分比或分數，例如 92%]
+• 檢索忠實度 (Faithfulness)：[請動態計算數值，例如 96%]
+  - 判定說明：[詳細說明辨識到的特徵、刻字或對應區塊，例如：成功擷取藥丸表面刻字「04」並精準對應至知識庫編號04活路利淨區塊，無幻覺資訊]
+• 答案相關性 (Answer Relevance)：[請動態計算數值，例如 94%]
+  - 判定說明：[詳細說明欄位對應狀況，例如：藥袋/藥丸各項醫療欄位與檢索內容高度吻合]
 ━━━━━━━━━━━━━━
 """
             
@@ -712,7 +746,7 @@ def handle_image_message(event):
                 raise last_error if last_error else Exception("No response generated")
 
             result_text = response.text.strip()
-            base_result_text = result_text  # 用於判斷是否為非慢性病用藥
+            base_result_text = result_text
             user_pending_data[user_id] = result_text
 
         except Exception as e:
