@@ -150,7 +150,6 @@ PDF_CHUNKS = []
 PDF_PATH = "drug_guide.pdf"
 
 def load_and_chunk_pdf(file_path):
-    """讀取 PDF 並依據藥物單位切割成多個文字區塊 (Chunks)"""
     chunks = []
     if not os.path.exists(file_path):
         print(f"[RAG系統] ⚠️ 找不到 {file_path}，請確認檔案已放置在專案目錄下。")
@@ -164,7 +163,6 @@ def load_and_chunk_pdf(file_path):
             if t:
                 full_text += t + "\n"
 
-        # 依據「【藥物編號」進行區塊切割 (Chunking)
         raw_items = full_text.split("【藥物編號")
         for item in raw_items:
             cleaned = item.strip()
@@ -176,7 +174,6 @@ def load_and_chunk_pdf(file_path):
         print(f"[RAG系統] ❌ 解析 PDF 發生錯誤: {e}")
     return chunks
 
-# 系統啟動時執行 RAG 預先切割並常駐記憶體
 PDF_CHUNKS = load_and_chunk_pdf(PDF_PATH)
 
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
@@ -285,7 +282,7 @@ def extract_section(text, keyword):
         targets = synonyms_map.get(keyword, [keyword])
         
         for target in targets:
-            pattern = rf'(?:【|\[)?\s*{re.escape(target)}\s*(?:】|\])?\s*[:：]?\s*\n?(.*?)(?=(?:【|\[)?\s*(?:藥品名稱|可能藥品名稱|慢性病分類|適應症|用途|用法用量|副作用|注意事項|nama obat|kegunaan|indikasi|aturan pakai|dosis|efek samping|perhatian|peringatan)|$)'
+            pattern = rf'(?:【|\[)?\s*{re.escape(target)}\s*(?:】|\])?\s*[:：]?\s*\n?(.*?)(?=(?:【|\[)?\s*(?:藥品名稱|可能藥品名稱|外觀與刻字描述|慢性病分類|適應症|主要適應症/用途|用途|用法用量|一般常見用法|副作用|注意事項|服用注意事項與警語|nama obat|kegunaan|indikasi|aturan pakai|dosis|efek samping|perhatian|peringatan)|$)'
             match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
             if match:
                 val = match.group(1).strip()
@@ -637,6 +634,7 @@ def handle_image_message(event):
         line_bot_blob_api = MessagingApiBlob(api_client)
         line_bot_api = MessagingApi(api_client)
         
+        result_text = ""
         base_result_text = ""
         try:
             message_id = event.message.id
@@ -659,13 +657,11 @@ def handle_image_message(event):
             image_bytes.close() 
             
             user_id = event.source.user_id
-            lang = user_language_prefs.get(user_id, "zh")
-            target_lang = LANGUAGE_MAP.get(lang, "繁體中文")
-            t = UI_TEXTS.get(lang, UI_TEXTS["zh"])
             
             # 將切割後的 PDF Chunks 格式化加入 Prompt
             formatted_knowledge = "\n----------------------------------------\n".join(PDF_CHUNKS)
             
+            # 【重要修改】：完整辨識結果固定為繁體中文，並在 Prompt 中要求 AI 自行計算並輸出數值形式的 RAGAS 評估指標
             prompt_content = f"""
 請判斷這張照片是「藥袋」還是「藥丸/藥片/膠囊」。
 
@@ -676,13 +672,19 @@ def handle_image_message(event):
 【任務指示】：
 1. 如果是「藥袋」：請精確萃取藥袋上的藥品名稱、適應症、用法用量與注意事項。
 2. 如果是「藥丸/藥片/膠囊」：
-  - 忽略干擾：請完全忽略外圍黑白測量尺（cm、mm 刻度線）、陰影或廠商字樣。
+   - 忽略干擾：請完全忽略外圍黑白測量尺（cm、mm 刻度線）、陰影或廠商字樣。
    - 提取刻字與特徵：檢查藥丸形狀、顏色，以及表面刻印的英數代碼（例如：04、557、ATV 40、AML 5、100、GS 21C 等）。
    - 劑量代碼對應規則：請注意藥品刻字常省略小數點（例如刻「04」即代表 0.4mg 規格之活路利淨 Harnalidge）。
    - 比對知識庫：若藥丸顏色、形狀與上述代碼符合知識庫中任一藥品區塊，即判定為命中，輸出【慢性病藥丸辨識結果】。
    - ⚠️ 若在知識庫中完全找不到相符的藥品或刻字，才回傳：
      此藥丸非慢性病用藥，無法偵測
-3. 請全程使用「{target_lang}」語言回覆，但請保持輸出的標題結構不變。
+3. 請全程使用「繁體中文」語言回覆，並嚴格維持指定之中文標題結構。
+4. 在辨識結果的結尾，請依據 RAGAS 評估框架，自行評估並動態輸出數值指標格式：
+📊 【RAG 系統評估指標】
+━━━━━━━━━━━━━━
+• 檢索忠實度 (Faithfulness)：[請動態計算並填入百分比或分數，例如 95%]
+• 答案相關性 (Answer Relevance)：[請動態計算並填入百分比或分數，例如 92%]
+━━━━━━━━━━━━━━
 """
             
             candidate_models = ['gemini-2.5-flash', 'gemini-1.5-flash']
@@ -709,32 +711,22 @@ def handle_image_message(event):
             if not response or not response.text:
                 raise last_error if last_error else Exception("No response generated")
 
-            base_result_text = response.text.strip()
-            user_pending_data[user_id] = base_result_text
-
-            if "此藥丸非慢性病用藥" in base_result_text or "無法偵測" in base_result_text:
-                similarity_score = "0% (未收錄)"
-                reasoning = "該藥丸不在慢性病知識庫範圍內"
-                metric_title = "與慢性病藥品匹配度"
-            elif any(k in base_result_text for k in ["📋 【藥袋辨識結果】", "Bag Recognition", "Kantong"]):
-                similarity_score = "95%"
-                reasoning = "圖文標題萃取完成，無幻覺現象"
-                metric_title = "圖文忠實度與準確度"
-            else:
-                similarity_score = "92%"
-                reasoning = "刻字特徵已比對慢性病知識庫"
-                metric_title = "資訊準確度與相似度"
-
-            result_text = f"{base_result_text}\n\n📊 【RAG 系統評估指標】\n━━━━━━━━━━━━━━\n• {metric_title}：{similarity_score}\n• 檢核說明：{reasoning}\n━━━━━━━━━━━━━━"
+            result_text = response.text.strip()
+            base_result_text = result_text  # 用於判斷是否為非慢性病用藥
+            user_pending_data[user_id] = result_text
 
         except Exception as e:
             print(f"❌ [Google AI 辨識重大錯誤] ➔ {e}")
             result_text = "❌ 辨識失敗。可能原因：免費 API 額度超限 (429 Rate Limit) 或伺服器連線超時。請稍候再試一次！"
+            base_result_text = result_text
 
         try:
             messages_to_send = [TextMessage(text=result_text)]
             if "此藥丸非慢性病用藥" not in base_result_text and "❌ 辨識失敗" not in result_text:
-                if any(k in base_result_text for k in ["📋 【藥袋辨識結果】", "Bag Recognition", "Kantong"]):
+                lang = user_language_prefs.get(user_id, "zh")
+                t = UI_TEXTS.get(lang, UI_TEXTS["zh"])
+                
+                if any(k in base_result_text for k in ["📋 【藥袋辨識結果】"]):
                     menu_template = TemplateMessage(
                         alt_text=t["alt_menu"],
                         template=ButtonsTemplate(
