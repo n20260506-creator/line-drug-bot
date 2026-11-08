@@ -546,6 +546,14 @@ def handle_text_message(event):
                 )
             return
 
+# 初始化 client 處
+ai_client = genai.Client(
+    api_key=GOOGLE_API_KEY,
+    http_options={"api_version": "v1beta"} # 👈 關鍵：必須啟用 v1beta 才能使用 system_instruction
+)
+
+# --------------------------------------------------
+
 @handler.add(MessageEvent, message=ImageMessageContent)
 def handle_image_message(event):
     with ApiClient(configuration) as api_client:
@@ -588,7 +596,7 @@ def handle_image_message(event):
 1. 第一階段可見報告：使用者（設計者）上傳照片後，第一階段回傳的純文字報告必須100%全為繁體中文，包含藥品名稱、分類、適應症、用法用量、副作用、注意事項。
 2. RAGAS 動態檢核計算與說明：
    - 必須針對本次上傳的圖片特徵與上方檢索到的 RAG 知識庫內容進行實際比對。
-   - 檢索忠實度 (Faithfulness) 與 答案相關性 (Answer Relevance) 的百分比數值，絕對不可填寫固定範例，必須根據比對結果動態計算出精確數值（例如 94%、98% 等）。
+   - 檢索忠實度 (Faithfulness) 與 答案相關性 (Answer Relevance) 的百分比數值，絕對不可填寫固定範例，必須根據比對結果動態計算出精確數值。
    - 檢核說明：請勿使用罐頭範例，必須根據本次實際比對的語意契合度與知識庫涵蓋範圍，用中括号 [] 讓 RAGAS 系統現場生成真實對照與解釋說明。
 3. 第二階段隱藏資料：在報告最下方必須包含一個格式正確的 ```json 代碼區塊，內含 zh、en、id 三種語言對照（name, category, usage, dose, side_effect, warning），供後續點擊按鈕時依據使用者選擇的語言進行翻譯呈現。
 
@@ -616,9 +624,9 @@ def handle_image_message(event):
 💡 提示：本系統辨識結果僅供參考，用藥前請務必再次核對藥袋，並遵照醫囑。
 📊 【RAG 系統評估指標與專業檢核說明】
 ━━━━━━━━━━━━━━
-- 檢索忠實度 (Faithfulness)：[請根據本次實際檢索與比對結果動態計算出真實百分比數值，例如 96%]
+- 檢索忠實度 (Faithfulness)：[請根據本次實際檢索與比對結果動態計算出真實百分比數值]
   - 檢核說明：[請根據本次實際比對結果說明影像特徵與知識庫原文之語意忠實度與幻覺過濾狀況]
-- 答案相關性 (Answer Relevance)：[請根據本次實際檢索與比對結果動態計算出真實百分比數值，例如 95%]
+- 答案相關性 (Answer Relevance)：[請根據本次實際檢索與比對結果動態計算出真實百分比數值]
   - 檢核說明：[請根據本次實際比對結果說明擷取之醫療欄位與使用者輸入圖像特徵之語意對齊與匹配程度]
 ━━━━━━━━━━━━━━
 
@@ -633,7 +641,7 @@ def handle_image_message(event):
 }}
 """
             
-            candidate_models = ['gemini-2.5-flash', 'gemini-flash-latest']
+            candidate_models = ['gemini-2.5-flash', 'gemini-1.5-flash']
             response = None
             last_error = None
 
