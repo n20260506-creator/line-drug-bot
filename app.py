@@ -51,7 +51,7 @@ LANGUAGE_MAP = {
     "id": "Bahasa Indonesia"
 }
 
-# 多國語言 UI 文字對照表（已完全修正注意事項標題，無多餘字元）
+# 多國語言 UI 文字對照表
 UI_TEXTS = {
     "zh": {
         "bag_title": "📋 藥袋資訊細節查詢",
@@ -131,8 +131,8 @@ def get_sheets_client():
         
         creds_dict = json.loads(creds_json)
         scopes = [
-            'https://www.googleapis.com/auth/spreadsheets',
-            'https://www.googleapis.com/auth/drive'
+            '[https://www.googleapis.com/auth/spreadsheets](https://www.googleapis.com/auth/spreadsheets)',
+            '[https://www.googleapis.com/auth/drive](https://www.googleapis.com/auth/drive)'
         ]
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         client = gspread.authorize(creds)
@@ -189,48 +189,30 @@ SYSTEM_INSTRUCTION = """
 使用者上傳的照片可能是「藥袋」或「藥丸/藥片/膠囊」。
 
 請嚴格執行以下規則：
-
-【情況 A：如果是藥袋照片】
-1. 完整進行 OCR 文字辨識，並同時提供繁體中文、英文、印尼文對照的藥品資訊。
-2. 第一階段完整輸出必須包含結構化資訊、系統提示與 RAGAS 評估指標。
-
-【情況 B：如果是藥丸/藥片/膠囊照片（雙重檢驗原則）】
-1. 第一步（特徵擷取）：仔細辨認照片中藥丸正反兩面的刻字、英數代碼與顏色形狀。
-2. 第二步（檢索對照）：嚴格比對【常見慢性病藥品參考知識庫切割區塊】。
-3. 🚨 終止條件：若找不到相符項目，回傳：此藥丸非慢性病用藥，無法偵測。
-
-通用規定事項：
-- 第一階段辨識結果的語言固定為繁體中文。
-- 嚴禁輸出任何客套話、問候語。
+1. 第一階段顯示給使用者的完整辨識報告與 RAGAS 檢核指標必須**100%使用繁體中文**。
+2. 第二階段多語系（英文、印尼文）對照資料必須包裝在後端的隱藏 JSON 區塊中，供按鈕點擊時切換使用。
+3. 嚴禁輸出任何客套話、問候語。
 """
 
-def extract_multilingual_section(text, keyword, lang="zh"):
-    """從結構化多語系文字中直接提取對應語言的內容，完全不需要呼叫 API 翻譯"""
+def extract_field_from_json(stored_data, field_key, lang="zh"):
+    """從暫存的隱藏 JSON 資料中精準萃取對應語言的欄位內容"""
     try:
-        lang_key_map = {"zh": "中文:", "en": "英文:", "id": "印尼文:"}
-        target_prefix = lang_key_map.get(lang, "中文:")
-        
-        # 尋找該關鍵字區塊
-        pattern = rf'(?:【|\[)?\s*({re.escape(keyword)}.*?)(?:】|\])?\s*[:：]?\s*\n?(.*?)(?=(?:【|\[)?\s*(?:藥品名稱|可能藥品名稱|外觀與刻字描述|慢性病分類|適應症|主要適應症/用途|用法用量|一般常見用法|副作用|注意事項)|$)'
-        match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
-        
+        match = re.search(r'```json\s*(\{.*?\})\s*```', stored_data, re.DOTALL)
         if match:
-            block_content = match.group(2).strip()
-            if "|" in block_content or "中文:" in block_content:
-                parts = block_content.split("|")
-                for part in parts:
-                    if target_prefix in part:
-                        val = part.split(target_prefix)[1].strip()
-                        if val:
-                            return val
-                return block_content.split("|")[0].replace("中文:", "").strip()
-            else:
-                return block_content
-
-        return "（未標示 / Not specified）"
+            data_dict = json.loads(match.group(1))
+            if field_key in data_dict:
+                return data_dict[field_key].get(lang, data_dict[field_key].get("zh", "（未標示）"))
     except Exception as e:
-        print(f"❌ [多語系解析失敗] ➔ {e}")
-        return "（未標示 / Not specified）"
+        print(f"❌ [JSON 欄位解析失敗] ➔ {e}")
+    return "（未標示 / Not specified）"
+
+def get_clean_display_text(stored_data):
+    """移除隱藏的 JSON 區塊，僅保留要顯示給使用者看的乾淨繁體中文報告與 RAGAS 指標"""
+    try:
+        clean_text = re.sub(r'```json\s*\{.*?\}\s*```', '', stored_data, flags=re.DOTALL)
+        return clean_text.strip()
+    except Exception:
+        return stored_data
 
 def send_delay_reminder(user_id):
     with ApiClient(configuration) as api_client:
@@ -361,22 +343,22 @@ def handle_postback(event):
         elif data.startswith("view_bag="):
             view_type = data.split("=")[1]
             stored_data = user_pending_data.get(user_id, "查無近期辨識資料 / No recent recognition data.")
-            warning_info = extract_multilingual_section(stored_data, "注意事項", lang)
+            warning_info = extract_field_from_json(stored_data, "warning", lang)
 
             if view_type == "name":
-                val = extract_multilingual_section(stored_data, "藥品名稱", lang)
+                val = extract_field_from_json(stored_data, "name", lang)
                 reply_msg = f"{t['btn_name']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             elif view_type == "usage":
-                val = extract_multilingual_section(stored_data, "適應症", lang)
+                val = extract_field_from_json(stored_data, "usage", lang)
                 reply_msg = f"{t['btn_usage']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             elif view_type == "dose":
-                val = extract_multilingual_section(stored_data, "用法用量", lang)
+                val = extract_field_from_json(stored_data, "dose", lang)
                 reply_msg = f"{t['btn_dose']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             elif view_type == "side_effect":
-                val = extract_multilingual_section(stored_data, "副作用", lang)
+                val = extract_field_from_json(stored_data, "side_effect", lang)
                 reply_msg = f"{t['btn_side_effect']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             else:
-                reply_msg = stored_data
+                reply_msg = get_clean_display_text(stored_data)
 
             line_bot_api.reply_message(
                 ReplyMessageRequest(
@@ -388,22 +370,22 @@ def handle_postback(event):
         elif data.startswith("view_pill="):
             view_type = data.split("=")[1]
             stored_data = user_pending_data.get(user_id, "查無近期辨識資料 / No recent recognition data.")
-            warning_info = extract_multilingual_section(stored_data, "注意事項", lang)
+            warning_info = extract_field_from_json(stored_data, "warning", lang)
 
             if view_type == "name":
-                val = extract_multilingual_section(stored_data, "藥品名稱", lang)
+                val = extract_field_from_json(stored_data, "name", lang)
                 reply_msg = f"{t['btn_pill_name']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             elif view_type == "category":
-                val = extract_multilingual_section(stored_data, "慢性病分類", lang)
+                val = extract_field_from_json(stored_data, "category", lang)
                 reply_msg = f"{t['btn_category']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             elif view_type == "usage":
-                val = extract_multilingual_section(stored_data, "適應症", lang)
+                val = extract_field_from_json(stored_data, "usage", lang)
                 reply_msg = f"{t['btn_pill_usage']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             elif view_type == "dose":
-                val = extract_multilingual_section(stored_data, "用法用量", lang)
+                val = extract_field_from_json(stored_data, "dose", lang)
                 reply_msg = f"{t['btn_pill_dose']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
             else:
-                reply_msg = stored_data
+                reply_msg = get_clean_display_text(stored_data)
 
             line_bot_api.reply_message(
                 ReplyMessageRequest(
@@ -596,45 +578,59 @@ def handle_image_message(event):
             
             formatted_knowledge = "\n----------------------------------------\n".join(PDF_CHUNKS)
             
-            # 【優化重點】：精確、專業、詳細的 RAGAS 檢核說明與結構輸出
             prompt_content = f"""
 請判斷這張照片是「藥袋」還是「藥丸/藥片/膠囊」。
 
 【常見慢性病藥品參考知識庫切割區塊 (RAG Chunks)】：
 {formatted_knowledge}
 
-【任務指示】：
-1. 如果是「藥袋」或「藥丸」：請精確萃取資訊，並同時提供繁體中文、英文、印尼文三種語言對照結構。
-2. 輸出格式必須嚴格採用以下結構（不可遺漏任何欄位）：
+【任務指示與評估規範】：
+1. 第一階段可見報告：使用者（設計者）上傳照片後，第一階段回傳的純文字報告必須100%全為繁體中文，包含藥品名稱、分類、適應症、用法用量、副作用、注意事項。
+2. RAGAS 動態檢核計算與說明：
+   - 必須針對本次上傳的圖片特徵與上方檢索到的 RAG 知識庫內容進行實際比對。
+   - 檢索忠實度 (Faithfulness) 與 答案相關性 (Answer Relevance) 的百分比數值，絕對不可填寫固定範例，必須根據比對結果動態計算出精確數值（例如 94%、98% 等）。
+   - 檢核說明：請勿使用罐頭範例，必須根據本次實際比對的語意契合度與知識庫涵蓋範圍，用中括号 [] 讓 RAGAS 系統現場生成真實對照與解釋說明。
+3. 第二階段隱藏資料：在報告最下方必須包含一個格式正確的 ```json 代碼區塊，內含 zh、en、id 三種語言對照（name, category, usage, dose, side_effect, warning），供後續點擊按鈕時依據使用者選擇的語言進行翻譯呈現。
 
+輸出格式範例：
 📋 【藥袋辨識結果】（或 💊 【慢性病藥丸辨識結果】）
 ━━━━━━━━━━━━━━
 【藥品名稱】：
-中文: [繁體中文名稱] | 英文: [English Name] | 印尼文: [Nama Indonesia]
+[繁體中文名稱]
 
 【慢性病分類】：（若為藥丸請填寫）
-中文: [中文分類] | 英文: [English Category] | 印尼文: [Kategori]
+[中文分類]
 
 【適應症/用途】：
-中文: [中文用途] | 英文: [English Uses] | 印尼文: [Kegunaan]
+[繁體中文用途]
 
 【用法用量】：
-中文: [中文用法] | 英文: [English Dosage] | 印尼文: [Dosis]
+[繁體中文用法用量]
 
 【副作用】：（若為藥袋請填寫）
-中文: [中文副作用] | 英文: [English Side Effects] | 印尼文: [Efek Samping]
+[繁體中文副作用]
 
 【注意事項】：
-中文: [中文注意事項] | 英文: [English Precautions] | 印尼文: [Perhatian]
+[繁體中文注意事項]
 ━━━━━━━━━━━━━━
 💡 提示：本系統辨識結果僅供參考，用藥前請務必再次核對藥袋，並遵照醫囑。
 📊 【RAG 系統評估指標與專業檢核說明】
 ━━━━━━━━━━━━━━
-• 檢索忠實度 (Faithfulness)：[請動態計算數值，例如 97%]
-  - 檢核說明：精確解析圖像特徵（如藥丸表面刻字、形狀、顏色或藥袋印刷文字），比對知識庫對應之區塊內容，確認無外部幻覺資訊，資訊擷取與知識庫原文語意高度忠實。
-• 答案相關性 (Answer Relevance)：[請動態計算數值，例如 95%]
-  - 檢核說明：擷取之醫療欄位（藥名、適應症、劑量與注意事項）與使用者輸入圖像具備完美語意對齊，無冗餘資訊，完全滿足慢性病藥品檢索目標。
+- 檢索忠實度 (Faithfulness)：[請根據本次實際檢索與比對結果動態計算出真實百分比數值，例如 96%]
+  - 檢核說明：[請根據本次實際比對結果說明影像特徵與知識庫原文之語意忠實度與幻覺過濾狀況]
+- 答案相關性 (Answer Relevance)：[請根據本次實際檢索與比對結果動態計算出真實百分比數值，例如 95%]
+  - 檢核說明：[請根據本次實際比對結果說明擷取之醫療欄位與使用者輸入圖像特徵之語意對齊與匹配程度]
 ━━━━━━━━━━━━━━
+
+```json
+{{
+  "name": {{ "zh": "中文藥名", "en": "English Name", "id": "Nama Indonesia" }},
+  "category": {{ "zh": "中文分類", "en": "Category", "id": "Kategori" }},
+  "usage": {{ "zh": "中文用途", "en": "Uses", "id": "Kegunaan" }},
+  "dose": {{ "zh": "中文用法", "en": "Dosage", "id": "Dosis" }},
+  "side_effect": {{ "zh": "中文副作用", "en": "Side Effects", "id": "Efek Samping" }},
+  "warning": {{ "zh": "中文注意事項", "en": "Precautions", "id": "Perhatian" }}
+}}
 """
             
             candidate_models = ['gemini-2.5-flash', 'gemini-1.5-flash']
