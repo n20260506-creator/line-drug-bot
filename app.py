@@ -232,32 +232,72 @@ def send_delay_reminder(user_id):
         except Exception as e:
             print(f"❌ [提醒發送失敗] ➔ {e}")
 
-def build_history_flex(records, period_title, lang="zh"):
+# ==================== [4大時段用藥紀錄卡片生成器] ====================
+SLOTS_CONFIG = [
+    {"key": "morning", "time_str": "08:00", "h_start": 7, "h_end": 9,  "label_zh": "早 08:00", "label_en": "Morn 08:00", "label_id": "Pagi 08:00"},
+    {"key": "noon",    "time_str": "12:00", "h_start": 11, "h_end": 13, "label_zh": "中 12:00", "label_en": "Noon 12:00", "label_id": "Siang 12:00"},
+    {"key": "evening", "time_str": "16:00", "h_start": 15, "h_end": 17, "label_zh": "晚 16:00", "label_en": "Eve 16:00",  "label_id": "Sore 16:00"},
+    {"key": "bedtime", "time_str": "20:00", "h_start": 19, "h_end": 21, "label_zh": "睡前 20:00", "label_en": "Bed 20:00",  "label_id": "Tidur 20:00"}
+]
+
+def build_daily_box(date_str, slot_results, lang="zh"):
+    """建立單日 4 時段的用藥檢視排版"""
+    items = []
+    # 日期分隔標題
+    items.append({
+        "type": "text",
+        "text": f"📅 {date_str}",
+        "weight": "bold",
+        "size": "sm",
+        "color": "#1E3A8A",
+        "margin": "md"
+    })
+
+    # 早、中、晚、睡前 4 時段逐行檢驗
+    for slot in SLOTS_CONFIG:
+        label = slot.get(f"label_{lang}", slot["label_zh"])
+        res = slot_results.get(slot["key"], {"status": "未服藥", "actual_time": ""})
+        
+        if res["status"] == "已服藥":
+            status_text = f"✅ 已服藥 ({res['actual_time']})" if res["actual_time"] else "✅ 已服藥"
+            color = "#059669"
+        elif res["status"] == "未到時間":
+            status_text = "⏳ 未到時間"
+            color = "#9CA3AF"
+        else:
+            status_text = "❌ 未服藥"
+            color = "#DC2626"
+
+        items.append({
+            "type": "box",
+            "layout": "horizontal",
+            "margin": "xs",
+            "contents": [
+                {"type": "text", "text": label, "size": "xs", "color": "#4B5563", "flex": 2},
+                {"type": "text", "text": status_text, "size": "xs", "weight": "bold", "color": color, "align": "end", "flex": 3}
+            ]
+        })
+    items.append({"type": "separator", "margin": "md"})
+    return items
+
+def build_history_flex(daily_records, period_title, lang="zh"):
+    """依照查詢區間（7日 / 1個月 / 2個月）生成卡片"""
     t = UI_TEXTS.get(lang, UI_TEXTS["zh"])
     formatted_title = t["history_title"].format(period=period_title)
-    formatted_subtitle = t["history_subtitle"].format(count=len(records))
 
-    if not records:
-        rows_contents = [{
+    body_contents = []
+    if not daily_records:
+        body_contents.append({
             "type": "text",
             "text": t["history_empty"].format(period=period_title),
             "color": "#6B7280",
             "size": "sm",
             "align": "center"
-        }]
+        })
     else:
-        rows_contents = []
-        for r in records:
-            rows_contents.append({
-                "type": "box",
-                "layout": "horizontal",
-                "margin": "sm",
-                "contents": [
-                    {"type": "text", "text": "💊", "flex": 0, "size": "sm"},
-                    {"type": "text", "text": r["time"], "size": "sm", "weight": "bold", "color": "#1F2937", "flex": 3},
-                    {"type": "text", "text": t["status_taken"], "size": "xs", "color": "#059669", "align": "end", "flex": 1}
-                ]
-            })
+        # 取最近 5 天（避免卡片超出 LINE 長度限制）
+        for d in daily_records[:5]:
+            body_contents.extend(build_daily_box(d["date"], d["slots"], lang))
 
     bubble_json = {
         "type": "bubble",
@@ -276,7 +316,7 @@ def build_history_flex(records, period_title, lang="zh"):
                 },
                 {
                     "type": "text",
-                    "text": formatted_subtitle,
+                    "text": "早(08) 中(12) 晚(16) 睡前(20) ±1小時檢驗",
                     "color": "#BFDBFE",
                     "size": "xs",
                     "margin": "xs"
@@ -286,8 +326,8 @@ def build_history_flex(records, period_title, lang="zh"):
         "body": {
             "type": "box",
             "layout": "vertical",
-            "spacing": "sm",
-            "contents": rows_contents
+            "spacing": "none",
+            "contents": body_contents
         }
     }
     return FlexMessage(alt_text=t["alt_history"], contents=FlexContainer.from_dict(bubble_json))
@@ -498,6 +538,13 @@ def handle_text_message(event):
             "2個月內用藥紀錄": {"days": 60, "title_zh": "2個月內", "title_en": "2 Months", "title_id": "2 Bulan"}
         }
 
+# 3. 處理「7日內 / 1個月內 / 2個月內用藥紀錄」查詢
+        query_days_map = {
+            "7日內用藥紀錄": {"days": 7, "title_zh": "7日內", "title_en": "7 Days", "title_id": "7 Hari"},
+            "1個月內用藥紀錄": {"days": 30, "title_zh": "1個月內", "title_en": "1 Month", "title_id": "1 Bulan"},
+            "2個月內用藥紀錄": {"days": 60, "title_zh": "2個月內", "title_en": "2 Months", "title_id": "2 Bulan"}
+        }
+
         if user_message in query_days_map:
             client = get_sheets_client()
             if not client:
@@ -519,22 +566,52 @@ def handle_text_message(event):
                 cutoff_date = now - timedelta(days=days_limit)
 
                 all_records = client.get_all_values()
-                user_logs = []
-
+                
+                # 收集該使用者所有的有效打卡時間
+                user_dt_logs = []
                 for row in all_records[1:]:
                     if len(row) >= 2 and row[1] == user_id:
-                        record_time_str = row[0]
                         try:
-                            record_time = datetime.strptime(record_time_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz_taiwan)
-                            if record_time >= cutoff_date:
-                                status = row[2] if len(row) > 2 else "已服藥"
-                                user_logs.append({"time": record_time_str, "status": status})
+                            r_dt = datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz_taiwan)
+                            if r_dt >= cutoff_date:
+                                user_dt_logs.append(r_dt)
                         except ValueError:
                             continue
 
-                recent_logs = user_logs[::-1][:10]
+                # 依天數由新到舊分組，逐一檢查 4 個時段
+                daily_records = []
+                total_days = min(days_limit, 7)  # 卡片展示最近 7 天
+                for day_offset in range(total_days):
+                    target_day = (now - timedelta(days=day_offset)).date()
+                    day_str = target_day.strftime("%Y-%m-%d")
+                    
+                    # 篩出當天的打卡紀錄
+                    day_dts = [d for d in user_dt_logs if d.date() == target_day]
+                    
+                    slot_results = {}
+                    for slot in SLOTS_CONFIG:
+                        # 該時段的正負 1 小時起始與結束時間
+                        slot_start = datetime(target_day.year, target_day.month, target_day.day, slot["h_start"], 0, tzinfo=tz_taiwan)
+                        slot_end = datetime(target_day.year, target_day.month, target_day.day, slot["h_end"], 0, tzinfo=tz_taiwan)
+                        
+                        # 檢查是否有打卡紀錄落在此窗口內
+                        matched = [d for d in day_dts if slot_start <= d <= slot_end]
+                        if matched:
+                            slot_results[slot["key"]] = {
+                                "status": "已服藥",
+                                "actual_time": matched[0].strftime("%H:%M")
+                            }
+                        else:
+                            # 若當前時間還沒超過該時段結束時間，顯示未到時間；若已過期則標示未服藥
+                            if now < slot_end:
+                                slot_results[slot["key"]] = {"status": "未到時間", "actual_time": ""}
+                            else:
+                                slot_results[slot["key"]] = {"status": "未服藥", "actual_time": ""}
+                                
+                    daily_records.append({"date": day_str, "slots": slot_results})
 
-                flex_msg = build_history_flex(recent_logs, period_title, lang=lang)
+                # 生成新版 4 時段卡片並回傳
+                flex_msg = build_history_flex(daily_records, period_title, lang=lang)
                 line_bot_api.reply_message(
                     ReplyMessageRequest(
                         reply_token=event.reply_token,
@@ -550,7 +627,6 @@ def handle_text_message(event):
                     )
                 )
             return
-
 @handler.add(MessageEvent, message=ImageMessageContent)
 def handle_image_message(event):
     with ApiClient(configuration) as api_client:
