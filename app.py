@@ -633,7 +633,7 @@ def handle_image_message(event):
 }}
 """
             
-            candidate_models = ['gemini-2.5-flash', 'gemini-1.5-flash']
+            candidate_models = ['gemini-2.5-flash', 'gemini-flash-latest']
             response = None
             last_error = None
 
