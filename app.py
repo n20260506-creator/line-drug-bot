@@ -131,8 +131,8 @@ def get_sheets_client():
         
         creds_dict = json.loads(creds_json)
         scopes = [
-            'https://www.googleapis.com/auth/spreadsheets',
-            'https://www.googleapis.com/auth/drive'
+            '[https://www.googleapis.com/auth/spreadsheets](https://www.googleapis.com/auth/spreadsheets)',
+            '[https://www.googleapis.com/auth/drive](https://www.googleapis.com/auth/drive)'
         ]
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         client = gspread.authorize(creds)
@@ -182,12 +182,7 @@ GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
 
 configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
-
-# 初始化 Google GenAI 客戶端，明確指定 api_version="v1beta" 以支援 system_instruction
-ai_client = genai.Client(
-    api_key=GOOGLE_API_KEY,
-    http_options={"api_version": "v1beta"}
-)
+ai_client = genai.Client(api_key=GOOGLE_API_KEY)
 
 SYSTEM_INSTRUCTION = """
 你是一位擁有極高辨識精準度的「慢性病藥丸與藥袋審核專家」。
@@ -195,7 +190,7 @@ SYSTEM_INSTRUCTION = """
 
 請嚴格執行以下規則：
 1. 第一階段顯示給使用者的完整辨識報告與 RAGAS 檢核指標必須**100%使用繁體中文**。
-2. 第二階段多語系（英文、印尼文）對照資料必須包裝在後端的隱藏 JSON 區塊中，絕對不可讓使用者在第一階段看見。
+2. 第二階段多語系（英文、印尼文）對照資料必須包裝在後端的隱藏 JSON 區塊中，供按鈕點擊時切換使用。
 3. 嚴禁輸出任何客套話、問候語。
 """
 
@@ -212,7 +207,7 @@ def extract_field_from_json(stored_data, field_key, lang="zh"):
     return "（未標示 / Not specified）"
 
 def get_clean_display_text(stored_data):
-    """完美清除隱藏的 JSON 區塊，確保使用者在 LINE 畫面中絕對不會看到 JSON 原始碼"""
+    """移除隱藏的 JSON 區塊，僅保留要顯示給使用者看的乾淨繁體中文報告與 RAGAS 指標"""
     try:
         clean_text = re.sub(r'```json\s*\{.*?\}\s*```', '', stored_data, flags=re.DOTALL)
         return clean_text.strip()
@@ -551,6 +546,14 @@ def handle_text_message(event):
                 )
             return
 
+# 初始化 client 處
+ai_client = genai.Client(
+    api_key=GOOGLE_API_KEY,
+    http_options={"api_version": "v1beta"} # 👈 關鍵：必須啟用 v1beta 才能使用 system_instruction
+)
+
+# --------------------------------------------------
+
 @handler.add(MessageEvent, message=ImageMessageContent)
 def handle_image_message(event):
     with ApiClient(configuration) as api_client:
@@ -589,13 +592,13 @@ def handle_image_message(event):
 【常見慢性病藥品參考知識庫切割區塊 (RAG Chunks)】：
 {formatted_knowledge}
 
-【任務指示與學術嚴格評估規範】：
-1. 第一階段可見報告：第一階段回傳的純文字報告必須100%全為繁體中文，包含藥品名稱、分類、適應症、用法用量、副作用、注意事項。絕對不可在可見報告中顯示任何 JSON 原始碼。
-2. RAGAS 動態檢核計算與嚴格扣分規則（禁止盲目給予 100%）：
-   - 檢索忠實度 (Faithfulness)：請嚴格比對上傳圖像特徵與 RAG 知識庫原文。若有任何因圖像模糊、反光或字跡不清導致的推論與不確定性，必須確實扣分（請根據比對結果動態計算出真實數值，絕對禁止直接給 100%）。
-   - 答案相關性 (Answer Relevance)：評估萃取欄位與圖像特徵的精確匹配度。若有部分欄位無法完全對應而需參照常識，必須如實反映並動態計算出真實數值。
-   - 檢核說明：請勿使用任何罐頭範例，必須根據本次實際比對結果，用 [] 填寫真實的對照與檢核說明。
-3. 第二階段隱藏資料：在整段回覆的最底部，必須獨立包裝一個 ```json 代碼區塊（內含 zh、en、id 三種語言對照：name, category, usage, dose, side_effect, warning），供後端點擊按鈕時切換使用。這段 JSON 會在前端透過清洗函式自動隱藏，切勿讓使用者直接看到。
+【任務指示與評估規範】：
+1. 第一階段可見報告：使用者（設計者）上傳照片後，第一階段回傳的純文字報告必須100%全為繁體中文，包含藥品名稱、分類、適應症、用法用量、副作用、注意事項。
+2. RAGAS 動態檢核計算與說明：
+   - 必須針對本次上傳的圖片特徵與上方檢索到的 RAG 知識庫內容進行實際比對。
+   - 檢索忠實度 (Faithfulness) 與 答案相關性 (Answer Relevance) 的百分比數值，絕對不可填寫固定範例，必須根據比對結果動態計算出精確數值。
+   - 檢核說明：請勿使用罐頭範例，必須根據本次實際比對的語意契合度與知識庫涵蓋範圍，用中括号 [] 讓 RAGAS 系統現場生成真實對照與解釋說明。
+3. 第二階段隱藏資料：在報告最下方必須包含一個格式正確的 ```json 代碼區塊，內含 zh、en、id 三種語言對照（name, category, usage, dose, side_effect, warning），供後續點擊按鈕時依據使用者選擇的語言進行翻譯呈現。
 
 輸出格式範例：
 📋 【藥袋辨識結果】（或 💊 【慢性病藥丸辨識結果】）
@@ -621,10 +624,10 @@ def handle_image_message(event):
 💡 提示：本系統辨識結果僅供參考，用藥前請務必再次核對藥袋，並遵照醫囑。
 📊 【RAG 系統評估指標與專業檢核說明】
 ━━━━━━━━━━━━━━
-- 檢索忠實度 (Faithfulness)：[請根據本次實際比對與模糊程度動態計算真實百分比數值]
-  - 檢核說明：[請填寫本次實際比對圖像特徵與知識庫原文的忠實度與落差說明]
-- 答案相關性 (Answer Relevance)：[請根據本次實際比對與匹配程度動態計算真實百分比數值]
-  - 檢核說明：[請填寫本次實際比對醫療欄位與圖像特徵之語意對齊程度]
+- 檢索忠實度 (Faithfulness)：[請根據本次實際檢索與比對結果動態計算出真實百分比數值]
+  - 檢核說明：[請根據本次實際比對結果說明影像特徵與知識庫原文之語意忠實度與幻覺過濾狀況]
+- 答案相關性 (Answer Relevance)：[請根據本次實際檢索與比對結果動態計算出真實百分比數值]
+  - 檢核說明：[請根據本次實際比對結果說明擷取之醫療欄位與使用者輸入圖像特徵之語意對齊與匹配程度]
 ━━━━━━━━━━━━━━
 
 ```json
@@ -662,12 +665,9 @@ def handle_image_message(event):
             if not response or not response.text:
                 raise last_error if last_error else Exception("No response generated")
 
-            stored_full_text = response.text.strip()
-        user_pending_data[user_id] = stored_full_text
-
-        # 確保傳送給使用者的文字已透過清洗函式完全移除 JSON 區塊
-        result_text = get_clean_display_text(stored_full_text)
-        base_result_text = stored_full_text
+            result_text = response.text.strip()
+            base_result_text = result_text
+            user_pending_data[user_id] = result_text
 
         except Exception as e:
             print(f"❌ [Google AI 辨識重大錯誤] ➔ {e}")
