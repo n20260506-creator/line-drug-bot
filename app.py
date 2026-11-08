@@ -531,13 +531,6 @@ def handle_text_message(event):
                     )
                 )
             return
-
-        query_days_map = {
-            "7日內用藥紀錄": {"days": 7, "title_zh": "7日內", "title_en": "7 Days", "title_id": "7 Hari"},
-            "1個月內用藥紀錄": {"days": 30, "title_zh": "1個月內", "title_en": "1 Month", "title_id": "1 Bulan"},
-            "2個月內用藥紀錄": {"days": 60, "title_zh": "2個月內", "title_en": "2 Months", "title_id": "2 Bulan"}
-        }
-
 # 3. 處理「7日內 / 1個月內 / 2個月內用藥紀錄」查詢
         query_days_map = {
             "7日內用藥紀錄": {"days": 7, "title_zh": "7日內", "title_en": "7 Days", "title_id": "7 Hari"},
@@ -607,7 +600,6 @@ def handle_text_message(event):
                                 slot_results[slot["key"]] = {"status": "未到時間", "actual_time": ""}
                             else:
                                 slot_results[slot["key"]] = {"status": "未服藥", "actual_time": ""}
-                                
                     daily_records.append({"date": day_str, "slots": slot_results})
 
                 # 生成新版 4 時段卡片並回傳
