@@ -194,7 +194,7 @@ SYSTEM_INSTRUCTION = """
 使用者上傳的照片可能是「藥袋」或「藥丸/藥片/膠囊」。
 
 請嚴格執行以下規則：
-1. 第一階段顯示給使用者的完整辨識報告與 RAGAS 檢核指標必須**100%使用繁體中文**。
+1. 第一階段顯示給使用者的完整辨識報告與 RAGAS 檢核指標必須100%使用繁體中文。
 2. 第二階段多語系（英文、印尼文）對照資料必須包裝在後端的隱藏 JSON 區塊中，絕對不可讓使用者在第一階段看見。
 3. 嚴禁輸出任何客套話、問候語。
 """
@@ -243,7 +243,6 @@ SLOTS_CONFIG = [
 def build_daily_box(date_str, slot_results, lang="zh"):
     """建立單日 4 時段的用藥檢視排版"""
     items = []
-    # 日期分隔標題
     items.append({
         "type": "text",
         "text": f"📅 {date_str}",
@@ -253,13 +252,12 @@ def build_daily_box(date_str, slot_results, lang="zh"):
         "margin": "md"
     })
 
-    # 早、中、晚、睡前 4 時段逐行檢驗
     for slot in SLOTS_CONFIG:
         label = slot.get(f"label_{lang}", slot["label_zh"])
         res = slot_results.get(slot["key"], {"status": "未服藥", "actual_time": ""})
         
         if res["status"] == "已服藥":
-            status_text = f"✅ 已服藥 ({res['actual_time']})" if res["actual_time"] else "✅ 已服藥"
+            status_text = f"✅ 已服藥 ({res['actual_time']})" if res['actual_time'] else "✅ 已服藥"
             color = "#059669"
         elif res["status"] == "未到時間":
             status_text = "⏳ 未到時間"
@@ -295,7 +293,6 @@ def build_history_flex(daily_records, period_title, lang="zh"):
             "align": "center"
         })
     else:
-        # 取最近 5 天（避免卡片超出 LINE 長度限制）
         for d in daily_records[:5]:
             body_contents.extend(build_daily_box(d["date"], d["slots"], lang))
 
@@ -531,7 +528,7 @@ def handle_text_message(event):
                     )
                 )
             return
-# 3. 處理「7日內 / 1個月內 / 2個月內用藥紀錄」查詢
+
         query_days_map = {
             "7日內用藥紀錄": {"days": 7, "title_zh": "7日內", "title_en": "7 Days", "title_id": "7 Hari"},
             "1個月內用藥紀錄": {"days": 30, "title_zh": "1個月內", "title_en": "1 Month", "title_id": "1 Bulan"},
@@ -560,7 +557,6 @@ def handle_text_message(event):
 
                 all_records = client.get_all_values()
                 
-                # 收集該使用者所有的有效打卡時間
                 user_dt_logs = []
                 for row in all_records[1:]:
                     if len(row) >= 2 and row[1] == user_id:
@@ -571,23 +567,19 @@ def handle_text_message(event):
                         except ValueError:
                             continue
 
-                # 依天數由新到舊分組，逐一檢查 4 個時段
                 daily_records = []
-                total_days = min(days_limit, 7)  # 卡片展示最近 7 天
+                total_days = min(days_limit, 7)
                 for day_offset in range(total_days):
                     target_day = (now - timedelta(days=day_offset)).date()
                     day_str = target_day.strftime("%Y-%m-%d")
                     
-                    # 篩出當天的打卡紀錄
                     day_dts = [d for d in user_dt_logs if d.date() == target_day]
                     
                     slot_results = {}
                     for slot in SLOTS_CONFIG:
-                        # 該時段的正負 1 小時起始與結束時間
                         slot_start = datetime(target_day.year, target_day.month, target_day.day, slot["h_start"], 0, tzinfo=tz_taiwan)
                         slot_end = datetime(target_day.year, target_day.month, target_day.day, slot["h_end"], 0, tzinfo=tz_taiwan)
                         
-                        # 檢查是否有打卡紀錄落在此窗口內
                         matched = [d for d in day_dts if slot_start <= d <= slot_end]
                         if matched:
                             slot_results[slot["key"]] = {
@@ -595,14 +587,12 @@ def handle_text_message(event):
                                 "actual_time": matched[0].strftime("%H:%M")
                             }
                         else:
-                            # 若當前時間還沒超過該時段結束時間，顯示未到時間；若已過期則標示未服藥
                             if now < slot_end:
                                 slot_results[slot["key"]] = {"status": "未到時間", "actual_time": ""}
                             else:
                                 slot_results[slot["key"]] = {"status": "未服藥", "actual_time": ""}
                     daily_records.append({"date": day_str, "slots": slot_results})
 
-                # 生成新版 4 時段卡片並回傳
                 flex_msg = build_history_flex(daily_records, period_title, lang=lang)
                 line_bot_api.reply_message(
                     ReplyMessageRequest(
@@ -619,6 +609,7 @@ def handle_text_message(event):
                     )
                 )
             return
+
 @handler.add(MessageEvent, message=ImageMessageContent)
 def handle_image_message(event):
     with ApiClient(configuration) as api_client:
@@ -657,15 +648,17 @@ def handle_image_message(event):
 【常見慢性病藥品參考知識庫切割區塊 (RAG Chunks)】：
 {formatted_knowledge}
 
-【學術級 RAGAS 量化嚴格評估與動態欄位規範】：
+【學術級 RAGAS 量化嚴格評估與動態雙軌規範】：
 1. 第一階段報告：必須100%全為繁體中文。
-2. 演算法式量化扣分規則（嚴禁盲目給予 100%）：
-   - 檢索忠實度 (Faithfulness) [基準分 100% 進行扣分]：
-     * 檢索覆蓋率扣分：若上傳影像特徵僅部分對應至 RAG 知識庫，未完全對應的部分視情況扣分。
-     * 知識庫對齊落差：若部分細節需依賴通用常識推論而非直接來自 Chunk 原文，依程度扣分。
-     * 視覺雜訊干擾：若照片有反光、陰影或模糊，須扣分。
-   - 答案相關性 (Answer Relevance) [基準分 100% 進行扣分]：
-     * 欄位對齊精確度：若萃取出的欄位與影像特徵存在語意顆粒度落差，依落差程度如實扣分。
+
+2. 雙軌化忠實度與相關性評估規則（非常關鍵！嚴禁盲目給予 100%）：
+   - 【情境 A：若辨識為藥丸 (採用 RAG 檢索比對)】：
+     * 檢索忠實度 (Faithfulness)：比對藥丸辨識結果與 RAG 知識庫 (PDF Chunks) 的吻合度。若藥物特徵（刻字、形狀）需靠視覺推論或知識庫僅對應部分，視程度扣分。
+     * 答案相關性 (Answer Relevance)：嚴格評估萃取之用途/用法與藥丸特徵的語意對齊度。
+   
+   - 【情境 B：若辨識為藥袋 (採用 OCR 視覺印刷還原度，不比對 PDF 知識庫)】：
+     * 檢索忠實度 (Faithfulness)：**完全不從 RAG 知識庫檢索**！改為評估報告內容對於「照片中藥袋實際印刷文字」的清晰度與真實還原度。若藥袋文字反光、模糊或有摺痕導致必須進行合理推論，依模糊/推論程度如實扣分。
+     * 答案相關性 (Answer Relevance)：嚴格評估辨識出之藥名、用法用量、注意事項等欄位與藥袋上方視覺資訊的欄位精確對齊度。
 
 3. 第二階段隱藏資料：最底部獨立包裝 ```json 代碼區塊（含 zh, en, id 對照）。
 
@@ -691,9 +684,9 @@ def handle_image_message(event):
 📊 【RAG 系統評估指標與專業檢核說明】
 ━━━━━━━━━━━━━━
 - 檢索忠實度 (Faithfulness)：[填寫計算後數值]
-  - 檢核說明：[列出具體扣分算式與原因]
+  - 檢核說明：[指出藥袋照片何處模糊/反光，並說明視覺文字還原之扣分算式與原因]
 - 答案相關性 (Answer Relevance)：[填寫計算後數值]
-  - 檢核說明：[說明語意對齊扣分原因]
+  - 檢核說明：[說明藥袋欄位與文字特徵對齊之扣分原因]
 ━━━━━━━━━━━━━━
 
 【輸出格式範例 B（若辨識為藥丸）】：
@@ -718,9 +711,9 @@ def handle_image_message(event):
 📊 【RAG 系統評估指標與專業檢核說明】
 ━━━━━━━━━━━━━━
 - 檢索忠實度 (Faithfulness)：[填寫計算後數值]
-  - 檢核說明：[列出具體扣分算式與原因]
+  - 檢核說明：[列出與 PDF 知識庫比對之扣分算式與原因]
 - 答案相關性 (Answer Relevance)：[填寫計算後數值]
-  - 檢核說明：[說明語意對齊扣分原因]
+  - 檢核說明：[說明藥丸語意對齊扣分原因]
 ━━━━━━━━━━━━━━
 
 ```json
