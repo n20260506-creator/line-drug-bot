@@ -388,7 +388,7 @@ def handle_follow(event):
             )
         )
 
-    @handler.add(PostbackEvent)
+@handler.add(PostbackEvent)
 def handle_postback(event):
     data = event.postback.data
     user_id = event.source.user_id
