@@ -10,6 +10,8 @@ from datetime import datetime, timezone, timedelta
 from pypdf import PdfReader
 import nltk
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
+from apscheduler.schedulers.background import BackgroundScheduler
+import pytz
 
 # 引入 LINE SDK
 from linebot.v3 import WebhookHandler
@@ -355,7 +357,10 @@ def build_history_flex(daily_records, period_title, lang="zh"):
         }
     }
     return FlexMessage(alt_text=t["alt_history"], contents=FlexContainer.from_dict(bubble_json))
-
+# 👉 新增首頁健康檢查路由（給 UptimeRobot 防休眠用）
+@app.route("/", methods=['GET', 'HEAD'])
+def index():
+    return "LINE Bot 運作中！", 200
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers.get('X-Line-Signature', '')
@@ -875,6 +880,55 @@ def handle_image_message(event):
             )
         except Exception as reply_error:
             print(f"❌ [回傳失敗] ➔ {reply_error}")
+# ==================== [內建定時吃藥提醒排程] ====================
+def scheduled_medication_reminder():
+    """每天台灣時間 08:00, 12:00, 16:00, 20:00 自動推播吃藥提醒"""
+    print("⏰ [排程觸發] 開始發送定時吃藥提醒...")
+    target_users = []
+    client = get_sheets_client()
+    if client:
+        try:
+            records = client.get_all_values()
+            # 撈取 Google 試算表第 2 欄所有不重複的 user_id
+            sheet_users = {row[1] for row in records[1:] if len(row) >= 2 and row[1]}
+            target_users = list(sheet_users)
+        except Exception as e:
+            print(f"❌ [讀取推播名單失敗] ➔ {e}")
+
+    # 若試算表暫無資料，則從記憶體暫存取得使用者名單
+    if not target_users:
+        target_users = list(user_language_prefs.keys())
+
+    if not target_users:
+        print("⚠️ [排程提醒] 目前尚無使用者名單可推播。")
+        return
+
+    reminder_messages = {
+        "zh": "🔔 吃藥時間到了！請記得服用您的慢性病藥物喔。\n（服藥後可直接回傳「我吃藥了」進行打卡）",
+        "en": "🔔 Time to take your medicine! Please take your prescribed medication.\n(Reply 'I took my medicine' after taking)",
+        "id": "🔔 Waktunya minum obat! Harap minum obat Anda.\n(Balas 'Saya sudah minum obat' setelah minum)"
+    }
+
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        for uid in target_users:
+            lang = user_language_prefs.get(uid, "zh")
+            text_content = reminder_messages.get(lang, reminder_messages["zh"])
+            try:
+                line_bot_api.push_message(
+                    PushMessageRequest(
+                        to=uid,
+                        messages=[TextMessage(text=text_content)]
+                    )
+                )
+            except Exception as push_err:
+                print(f"❌ [推播失敗 uid: {uid}] ➔ {push_err}")
+
+# 設定台灣時區排程器（避開多 Worker 重複觸發，Render Start Command 需設為 gunicorn --workers 1 app:app）
+tw_tz = pytz.timezone('Asia/Taipei')
+scheduler = BackgroundScheduler(timezone=tw_tz)
+scheduler.add_job(scheduled_medication_reminder, 'cron', hour='8,12,16,20', minute='0')
+scheduler.start()
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
