@@ -6,3 +6,4 @@ gunicorn
 gspread
 google-auth
 pypdf
+nltk
