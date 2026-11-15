@@ -798,32 +798,32 @@ def handle_image_message(event):
             # 關鍵點：透過 get_clean_display_text 乾淨過濾 JSON 區塊
             result_text = get_clean_display_text(stored_full_text)
             # === [新增] 計算中文與譯文的 BLEU 指標 ===
-        try:
-            import json, re
-            json_match = re.search(r"```json\s*(\{.*?\})\s*```", stored_full_text, re.DOTALL)
-            if json_match:
-                drug_json = json.loads(json_match.group(1))
-                # 把所有欄位的中文串起來當作「中文原文」
-                zh_parts = [v.get("zh", "") for v in drug_json.values() if isinstance(v, dict)]
-                original_zh_all = " ".join(zh_parts).strip()
-                
-                # 根據使用者設定的語言，抓出對應的譯文（預設抓英文 en，若選印尼文則抓 id）
-                user_lang = user_language_prefs.get(user_id, "en")
-                target_key = "id" if user_lang == "id" else "en"
-                trans_parts = [v.get(target_key, "") for v in drug_json.values() if isinstance(v, dict)]
-                translated_all = " ".join(trans_parts).strip()
-
-                if original_zh_all and translated_all:
-                    bleu_score = calculate_chinese_bleu(
-                        original_zh=original_zh_all,
-                        translated_text=translated_all,
-                        genai_client=ai_client   # 👈 幫你對好你的變數名稱 ai_client 了！
-                    )
-                    # 直接把指標加在已翻譯成功的文字最後面
-                    result_text = f"{result_text}\n\n📊 翻譯語意相符度 (BLEU)：{bleu_score} 分"
-        except Exception as bleu_err:
-            print(f"⚠️ BLEU 指標附加失敗: {bleu_err}")
-        # ========================================
+            try:
+                import json, re
+                json_match = re.search(r"```json\s*(\{.*?\})\s*```", stored_full_text, re.DOTALL)
+                if json_match:
+                    drug_json = json.loads(json_match.group(1))
+                    # 把所有欄位的中文串起來當作「中文原文」
+                    zh_parts = [v.get("zh", "") for v in drug_json.values() if isinstance(v, dict)]
+                    original_zh_all = " ".join(zh_parts).strip()
+                    
+                    # 根據使用者設定的語言，抓出對應的譯文（預設抓英文 en，若選印尼文則抓 id）
+                    user_lang = user_language_prefs.get(user_id, "en")
+                    target_key = "id" if user_lang == "id" else "en"
+                    trans_parts = [v.get(target_key, "") for v in drug_json.values() if isinstance(v, dict)]
+                    translated_all = " ".join(trans_parts).strip()
+    
+                    if original_zh_all and translated_all:
+                        bleu_score = calculate_chinese_bleu(
+                            original_zh=original_zh_all,
+                            translated_text=translated_all,
+                            genai_client=ai_client   # 👈 幫你對好你的變數名稱 ai_client 了！
+                        )
+                        # 直接把指標加在已翻譯成功的文字最後面
+                        result_text = f"{result_text}\n\n📊 翻譯語意相符度 (BLEU)：{bleu_score} 分"
+            except Exception as bleu_err:
+                print(f"⚠️ BLEU 指標附加失敗: {bleu_err}")
+            # ========================================
             base_result_text = stored_full_text
 
         except Exception as e:
