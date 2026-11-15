@@ -924,12 +924,11 @@ def scheduled_medication_reminder():
             except Exception as push_err:
                 print(f"❌ [推播失敗 uid: {uid}] ➔ {push_err}")
 
-# 設定台灣時區排程器（避開多 Worker 重複觸發，Render Start Command 需設為 gunicorn --workers 1 app:app）
 tw_tz = pytz.timezone('Asia/Taipei')
 scheduler = BackgroundScheduler(timezone=tw_tz)
 scheduler.add_job(scheduled_medication_reminder, 'cron', hour='8,12,16,20', minute='0')
-# 👉 加上這一行測試用（例如凌晨 1 點 16 分觸發，測試成功後再刪掉即可）
-scheduler.add_job(scheduled_medication_reminder, 'cron', hour='1', minute='16')
+# 👉 改為凌晨 1 點 40 分測試
+scheduler.add_job(scheduled_medication_reminder, 'cron', hour='1', minute='50')
 scheduler.start()
 
 if __name__ == '__main__':
