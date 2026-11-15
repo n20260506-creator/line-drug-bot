@@ -904,7 +904,7 @@ def scheduled_medication_reminder():
         return
 
     reminder_messages = {
-        "zh": "🔔 吃藥時間到了！請記得服用您的慢性病藥物喔。\n（服藥後可直接回傳「我吃藥了」進行打卡）",
+        "zh": "🔔 提醒您吃藥時間到了~請記得服用您的藥物喔！\n（服藥後可按下「我吃藥了」按鈕 進行打卡）",
         "en": "🔔 Time to take your medicine! Please take your prescribed medication.\n(Reply 'I took my medicine' after taking)",
         "id": "🔔 Waktunya minum obat! Harap minum obat Anda.\n(Balas 'Saya sudah minum obat' setelah minum)"
     }
