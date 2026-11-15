@@ -8,6 +8,8 @@ from flask import Flask, request, abort
 from PIL import Image
 from datetime import datetime, timezone, timedelta
 from pypdf import PdfReader
+import nltk
+from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 
 # 引入 LINE SDK
 from linebot.v3 import WebhookHandler
@@ -37,7 +39,32 @@ from google.genai import types
 # 引入 Google Sheets 操作套件
 import gspread
 from google.oauth2.service_account import Credentials
+def calculate_chinese_bleu(original_zh: str, translated_text: str, genai_client) -> float:
+    """
+    透過「回譯」計算中文原文與譯文之間的 BLEU 分數 (0~100)
+    """
+    try:
+        # 1. 請 Gemini 把外文譯文「翻回繁體中文」作為比對基準
+        back_trans_prompt = f"請將以下內容精準翻譯回繁體中文，只需輸出翻譯結果，不要有任何解釋：\n{translated_text}"
+        response = genai_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=back_trans_prompt
+        )
+        back_zh = response.text.strip()
 
+        # 2. 中文以「單字（字元）」切分（排除空白與換行），避免中文沒有空格無法計算的問題
+        ref_tokens = [list(original_zh.replace(" ", "").replace("\n", ""))]
+        cand_tokens = list(back_zh.replace(" ", "").replace("\n", ""))
+
+        # 3. 使用平滑函數計算 BLEU（避免短句算出 0 分）
+        smoothie = SmoothingFunction().method1
+        score = sentence_bleu(ref_tokens, cand_tokens, smoothing_function=smoothie)
+        
+        return round(score * 100, 1)  # 轉成百分比，取小數點後一位
+    except Exception as e:
+        print(f"BLEU 計算失敗: {e}")
+        return 0.0
+        
 # ==================== [Flask 應用程式宣告] ====================
 app = Flask(__name__)
 
@@ -772,6 +799,33 @@ def handle_image_message(event):
             
             # 關鍵點：透過 get_clean_display_text 乾淨過濾 JSON 區塊
             result_text = get_clean_display_text(stored_full_text)
+            # === [新增] 計算中文與譯文的 BLEU 指標 ===
+        try:
+            import json, re
+            json_match = re.search(r"```json\s*(\{.*?\})\s*```", stored_full_text, re.DOTALL)
+            if json_match:
+                drug_json = json.loads(json_match.group(1))
+                # 把所有欄位的中文串起來當作「中文原文」
+                zh_parts = [v.get("zh", "") for v in drug_json.values() if isinstance(v, dict)]
+                original_zh_all = " ".join(zh_parts).strip()
+                
+                # 根據使用者設定的語言，抓出對應的譯文（預設抓英文 en，若選印尼文則抓 id）
+                user_lang = user_language_prefs.get(user_id, "en")
+                target_key = "id" if user_lang == "id" else "en"
+                trans_parts = [v.get(target_key, "") for v in drug_json.values() if isinstance(v, dict)]
+                translated_all = " ".join(trans_parts).strip()
+
+                if original_zh_all and translated_all:
+                    bleu_score = calculate_chinese_bleu(
+                        original_zh=original_zh_all,
+                        translated_text=translated_all,
+                        genai_client=ai_client   # 👈 幫你對好你的變數名稱 ai_client 了！
+                    )
+                    # 直接把指標加在已翻譯成功的文字最後面
+                    result_text = f"{result_text}\n\n📊 翻譯語意相符度 (BLEU)：{bleu_score} 分"
+        except Exception as bleu_err:
+            print(f"⚠️ BLEU 指標附加失敗: {bleu_err}")
+        # ========================================
             base_result_text = stored_full_text
 
         except Exception as e:
