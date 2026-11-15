@@ -928,6 +928,8 @@ def scheduled_medication_reminder():
 tw_tz = pytz.timezone('Asia/Taipei')
 scheduler = BackgroundScheduler(timezone=tw_tz)
 scheduler.add_job(scheduled_medication_reminder, 'cron', hour='8,12,16,20', minute='0')
+# 👉 加上這一行測試用（例如凌晨 1 點 16 分觸發，測試成功後再刪掉即可）
+scheduler.add_job(scheduled_medication_reminder, 'cron', hour='1', minute='16')
 scheduler.start()
 
 if __name__ == '__main__':
