@@ -409,59 +409,49 @@ def handle_postback(event):
                 )
             )
 
-        elif data.startswith("view_bag="):
-            view_type = data.split("=")[1]
-            stored_data = user_pending_data.get(user_id, "查無近期辨識資料 / No recent recognition data.")
-            warning_info = extract_field_from_json(stored_data, "warning", lang)
+   elif data.startswith("view_bag="):
+        view_type = data.split("=")[1]
+        stored_data = user_pending_data.get(user_id, "查無近期辨識資料 / No recent recognition data.")
+        warning_info = extract_field_from_json(stored_data, "warning", lang)
+        field_map = {
+            "name": t['btn_name'],
+            "usage": t['btn_usage'],
+            "dose": t['btn_dose'],
+            "side_effect": t['btn_side_effect']
+        }
+        if view_type in field_map:
+            val = extract_field_from_json(stored_data, view_type, lang)
+            reply_msg = f"{field_map[view_type]}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
+            if lang in ["en", "id"]:
+                zh_val = extract_field_from_json(stored_data, view_type, "zh")
+                zh_warn = extract_field_from_json(stored_data, "warning", "zh")
+                bleu_score = calculate_chinese_bleu(f"{zh_val} {zh_warn}", f"{val} {warning_info}", ai_client)
+                reply_msg += f"\n\n━━━━━━━━━━━━━━\n📊 翻譯語意相符度 (BLEU)：{bleu_score} 分"
+        else:
+            reply_msg = get_clean_display_text(stored_data)
+        line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=reply_msg)]))
 
-            if view_type == "name":
-                val = extract_field_from_json(stored_data, "name", lang)
-                reply_msg = f"{t['btn_name']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
-            elif view_type == "usage":
-                val = extract_field_from_json(stored_data, "usage", lang)
-                reply_msg = f"{t['btn_usage']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
-            elif view_type == "dose":
-                val = extract_field_from_json(stored_data, "dose", lang)
-                reply_msg = f"{t['btn_dose']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
-            elif view_type == "side_effect":
-                val = extract_field_from_json(stored_data, "side_effect", lang)
-                reply_msg = f"{t['btn_side_effect']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
-            else:
-                reply_msg = get_clean_display_text(stored_data)
-
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=reply_msg)]
-                )
-            )
-
-        elif data.startswith("view_pill="):
-            view_type = data.split("=")[1]
-            stored_data = user_pending_data.get(user_id, "查無近期辨識資料 / No recent recognition data.")
-            warning_info = extract_field_from_json(stored_data, "warning", lang)
-
-            if view_type == "name":
-                val = extract_field_from_json(stored_data, "name", lang)
-                reply_msg = f"{t['btn_pill_name']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
-            elif view_type == "category":
-                val = extract_field_from_json(stored_data, "category", lang)
-                reply_msg = f"{t['btn_category']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
-            elif view_type == "usage":
-                val = extract_field_from_json(stored_data, "usage", lang)
-                reply_msg = f"{t['btn_pill_usage']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
-            elif view_type == "dose":
-                val = extract_field_from_json(stored_data, "dose", lang)
-                reply_msg = f"{t['btn_pill_dose']}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
-            else:
-                reply_msg = get_clean_display_text(stored_data)
-
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=reply_msg)]
-                )
-            )
+    elif data.startswith("view_pill="):
+        view_type = data.split("=")[1]
+        stored_data = user_pending_data.get(user_id, "查無近期辨識資料 / No recent recognition data.")
+        warning_info = extract_field_from_json(stored_data, "warning", lang)
+        field_map = {
+            "name": t['btn_pill_name'],
+            "category": t['btn_category'],
+            "usage": t['btn_pill_usage'],
+            "dose": t['btn_pill_dose']
+        }
+        if view_type in field_map:
+            val = extract_field_from_json(stored_data, view_type, lang)
+            reply_msg = f"{field_map[view_type]}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
+            if lang in ["en", "id"]:
+                zh_val = extract_field_from_json(stored_data, view_type, "zh")
+                zh_warn = extract_field_from_json(stored_data, "warning", "zh")
+                bleu_score = calculate_chinese_bleu(f"{zh_val} {zh_warn}", f"{val} {warning_info}", ai_client)
+                reply_msg += f"\n\n━━━━━━━━━━━━━━\n📊 翻譯語意相符度 (BLEU)：{bleu_score} 分"
+        else:
+            reply_msg = get_clean_display_text(stored_data)
+        line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=reply_msg)]))    
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_text_message(event):
