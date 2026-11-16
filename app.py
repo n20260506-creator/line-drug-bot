@@ -426,7 +426,7 @@ def handle_postback(event):
                 "dose": t['btn_dose'],
                 "side_effect": t['btn_side_effect']
             }
-      if view_type in field_map:
+            if view_type in field_map:
                 val = extract_field_from_json(stored_data, view_type, lang)
                 reply_msg = f"{field_map[view_type]}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
                 
@@ -456,7 +456,7 @@ def handle_postback(event):
                 "usage": t['btn_pill_usage'],
                 "dose": t['btn_pill_dose']
             }
-            if view_type in field_map:
+                  if view_type in field_map:
                 val = extract_field_from_json(stored_data, view_type, lang)
                 reply_msg = f"{field_map[view_type]}：\n{val}\n\n{t['warning_title']}\n{warning_info}"
                 try:
@@ -811,7 +811,7 @@ def handle_image_message(event):
             if not response or not response.text:
                 raise last_error if last_error else Exception("No response generated")
 
-        stored_full_text = response.text.strip()
+            stored_full_text = response.text.strip()
             user_pending_data[user_id] = stored_full_text
             
             # 關鍵點：透過 get_clean_display_text 乾淨過濾 JSON 區塊
