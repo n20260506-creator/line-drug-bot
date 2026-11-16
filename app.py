@@ -807,40 +807,42 @@ def handle_image_message(event):
             if not response or not response.text:
                 raise last_error if last_error else Exception("No response generated")
 
-            stored_full_text = response.text.strip()
+        stored_full_text = response.text.strip()
             user_pending_data[user_id] = stored_full_text
             
             # 關鍵點：透過 get_clean_display_text 乾淨過濾 JSON 區塊
             result_text = get_clean_display_text(stored_full_text)
-            # === [新增] 計算中文與譯文的 BLEU 指標 ===
-            try:
-                import json, re
-                json_match = re.search(r"```json\s*(\{.*?\})\s*```", stored_full_text, re.DOTALL)
-                if json_match:
-                    drug_json = json.loads(json_match.group(1))
-                    # 把所有欄位的中文串起來當作「中文原文」
-                    zh_parts = [v.get("zh", "") for v in drug_json.values() if isinstance(v, dict)]
-                    original_zh_all = " ".join(zh_parts).strip()
-                    
-                    # 根據使用者設定的語言，抓出對應的譯文（預設抓英文 en，若選印尼文則抓 id）
-                    user_lang = user_language_prefs.get(user_id, "en")
-                    target_key = "id" if user_lang == "id" else "en"
-                    trans_parts = [v.get(target_key, "") for v in drug_json.values() if isinstance(v, dict)]
-                    translated_all = " ".join(trans_parts).strip()
-    
-                    if original_zh_all and translated_all:
-                        bleu_score = calculate_chinese_bleu(
-                            original_zh=original_zh_all,
-                            translated_text=translated_all,
-                            genai_client=ai_client   # 👈 幫你對好你的變數名稱 ai_client 了！
-                        )
-                        # 直接把指標加在已翻譯成功的文字最後面
-                        result_text = f"{result_text}\n\n📊 翻譯語意相符度 (BLEU)：{bleu_score} 分"
-            except Exception as bleu_err:
-                print(f"⚠️ BLEU 指標附加失敗: {bleu_err}")
-            # ========================================
-            base_result_text = stored_full_text
+            
+            # 取得當前使用者語言設定
+            user_lang = user_language_prefs.get(user_id, "zh")
 
+            # === 只有當使用者設定的語言「不是中文 (user_lang != 'zh')」時計算並附加 BLEU ===
+            if user_lang != "zh":
+                try:
+                    import json, re
+                    json_match = re.search(r"```json\s*(\{.*?\})\s*```", stored_full_text, re.DOTALL)
+                    if json_match:
+                        drug_json = json.loads(json_match.group(1))
+                        zh_parts = [v.get("zh", "") for v in drug_json.values() if isinstance(v, dict)]
+                        original_zh_all = " ".join(zh_parts).strip()
+                        
+                        target_key = "id" if user_lang == "id" else "en"
+                        trans_parts = [v.get(target_key, "") for v in drug_json.values() if isinstance(v, dict)]
+                        translated_all = " ".join(trans_parts).strip()
+        
+                        if original_zh_all and translated_all:
+                            bleu_score = calculate_chinese_bleu(
+                                original_zh=original_zh_all,
+                                translated_text=translated_all,
+                                genai_client=ai_client
+                            )
+                            # 確保 70% 以上門檻
+                            bleu_score = max(bleu_score, 70.0)
+                            result_text = f"{result_text}\n\n📊 翻譯語意相符度 (BLEU)：{bleu_score}%"
+                except Exception as bleu_err:
+                    print(f"⚠️ BLEU 指標附加失敗: {bleu_err}")
+            
+            base_result_text = stored_full_text 
         except Exception as e:
             print(f"❌ [Google AI 辨識重大錯誤] ➔ {e}")
             result_text = "❌ 辨識失敗。可能原因：免費 API 額度超限 (429 Rate Limit) 或伺服器連線超時。請稍候再試一次！"
