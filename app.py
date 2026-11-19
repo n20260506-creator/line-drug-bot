@@ -574,7 +574,7 @@ def handle_text_message(event):
             "2個月內用藥紀錄": {"days": 60, "title_zh": "2個月內", "title_en": "2 Months", "title_id": "2 Bulan"}
         }
 
-if user_message in query_days_map:
+        if user_message in query_days_map:
             client = get_sheets_client()
             if not client:
                 line_bot_api.reply_message(
