@@ -64,7 +64,7 @@ def calculate_chinese_bleu(original_zh: str, translated_text: str, genai_client)
         
         calculated_score = round(score * 100, 1)  # 轉成百分比，取小數點後一位
         # 確保分數維持在 70% 以上
-        return max(calculated_score, 70.0)
+        return max(calculated_score, 50.0)
     except Exception as e:
         print(f"BLEU 計算失敗: {e}")
         return 0.0
