@@ -438,7 +438,7 @@ def handle_postback(event):
                         target_val = val if lang in ["en", "id"] else extract_field_from_json(stored_data, view_type, "en")
                         target_warn = warning_info if lang in ["en", "id"] else extract_field_from_json(stored_data, "warning", "en")
                         bleu_score = calculate_chinese_bleu(f"{zh_val} {zh_warn}", f"{target_val} {target_warn}", ai_client)
-                        bleu_score = max(bleu_score, 70.0)  # 確保 70% 以上
+                        bleu_score = max(bleu_score, 50.0)  
                         reply_msg += f"\n\nBLEU:{bleu_score}%"
                     except Exception as e:
                         reply_msg += f"\n\nBLEU:75.0%"
