@@ -290,6 +290,9 @@ def build_daily_box(date_str, slot_results, lang="zh"):
         if res["status"] == "已服藥":
             status_text = f"✅ 已服藥 ({res['actual_time']})" if res['actual_time'] else "✅ 已服藥"
             color = "#059669"
+        elif res["status"] == "未準時":
+            status_text = f"⚠️ 未準時 ({res['actual_time']})" if res['actual_time'] else "⚠️ 未準時"
+            color = "#D97706"
         elif res["status"] == "未到時間":
             status_text = "⏳ 未到時間"
             color = "#9CA3AF"
@@ -571,7 +574,7 @@ def handle_text_message(event):
             "2個月內用藥紀錄": {"days": 60, "title_zh": "2個月內", "title_en": "2 Months", "title_id": "2 Bulan"}
         }
 
-        if user_message in query_days_map:
+if user_message in query_days_map:
             client = get_sheets_client()
             if not client:
                 line_bot_api.reply_message(
@@ -609,24 +612,47 @@ def handle_text_message(event):
                     target_day = (now - timedelta(days=day_offset)).date()
                     day_str = target_day.strftime("%Y-%m-%d")
                     
-                    day_dts = [d for d in user_dt_logs if d.date() == target_day]
+                    day_dts = sorted([d for d in user_dt_logs if d.date() == target_day])
                     
+                    # 先初始化當天 4 個時段的預設狀態
                     slot_results = {}
                     for slot in SLOTS_CONFIG:
-                        slot_start = datetime(target_day.year, target_day.month, target_day.day, slot["h_start"], 0, tzinfo=tz_taiwan)
                         slot_end = datetime(target_day.year, target_day.month, target_day.day, slot["h_end"], 0, tzinfo=tz_taiwan)
-                        
-                        matched = [d for d in day_dts if slot_start <= d <= slot_end]
-                        if matched:
-                            slot_results[slot["key"]] = {
-                                "status": "已服藥",
-                                "actual_time": matched[0].strftime("%H:%M")
-                            }
+                        if now < slot_end:
+                            slot_results[slot["key"]] = {"status": "未到時間", "actual_time": ""}
                         else:
-                            if now < slot_end:
-                                slot_results[slot["key"]] = {"status": "未到時間", "actual_time": ""}
-                            else:
-                                slot_results[slot["key"]] = {"status": "未服藥", "actual_time": ""}
+                            slot_results[slot["key"]] = {"status": "未服藥", "actual_time": ""}
+
+                    # 將當天的每筆服藥紀錄，分配給時間最接近的時段
+                    for d in day_dts:
+                        best_slot = None
+                        min_diff = float('inf')
+                        for slot in SLOTS_CONFIG:
+                            target_hour = int(slot["time_str"].split(":")[0])
+                            target_dt = datetime(target_day.year, target_day.month, target_day.day, target_hour, 0, tzinfo=tz_taiwan)
+                            diff_seconds = abs((d - target_dt).total_seconds())
+                            if diff_seconds < min_diff:
+                                min_diff = diff_seconds
+                                best_slot = slot
+
+                        if best_slot:
+                            slot_key = best_slot["key"]
+                            slot_start = datetime(target_day.year, target_day.month, target_day.day, best_slot["h_start"], 0, tzinfo=tz_taiwan)
+                            slot_end = datetime(target_day.year, target_day.month, target_day.day, best_slot["h_end"], 0, tzinfo=tz_taiwan)
+                            
+                            # 若該時段尚未被「已服藥」佔用，則更新狀態
+                            if slot_results[slot_key]["status"] != "已服藥":
+                                if slot_start <= d <= slot_end:
+                                    slot_results[slot_key] = {
+                                        "status": "已服藥",
+                                        "actual_time": d.strftime("%H:%M")
+                                    }
+                                else:
+                                    slot_results[slot_key] = {
+                                        "status": "未準時",
+                                        "actual_time": d.strftime("%H:%M")
+                                    }
+
                     daily_records.append({"date": day_str, "slots": slot_results})
 
                 flex_msg = build_history_flex(daily_records, period_title, lang=lang)
