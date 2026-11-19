@@ -509,6 +509,7 @@ def handle_postback(event):
             else:
                 reply_msg = get_clean_display_text(stored_data)
             line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=reply_msg)]))
+
         elif data.startswith("view_pill="):
             view_type = data.split("=")[1]
             stored_data = user_pending_data.get(user_id, "查無近期辨識資料 / No recent recognition data.")
