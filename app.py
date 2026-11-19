@@ -313,53 +313,51 @@ def build_daily_box(date_str, slot_results, lang="zh"):
     return items
 
 def build_history_flex(daily_records, period_title, days_limit=7, lang="zh"):
-    """依照查詢區間（7日 / 1個月 / 2個月）生成卡片或輪播"""
+    """依照查詢區間（7日 / 1個月 / 2個月）生成統計總覽與輪播卡片"""
     t = UI_TEXTS.get(lang, UI_TEXTS["zh"])
     formatted_title = t["history_title"].format(period=period_title)
 
-    # 若為 1 個月或 2 個月，先計算整個區間的統計數據
-    summary_box = None
-    if days_limit > 7:
-        total_taken = 0
-        total_late = 0
-        total_missed = 0
-        for d in daily_records:
-            for slot_info in d["slots"].values():
-                if slot_info["status"] == "已服藥":
-                    total_taken += 1
-                elif slot_info["status"] == "未準時":
-                    total_late += 1
-                elif slot_info["status"] == "未服藥":
-                    total_missed += 1
+    # 計算整個查詢區間（7日 / 30日 / 60日）的服藥統計數據
+    total_taken = 0
+    total_late = 0
+    total_missed = 0
+    for d in daily_records:
+        for slot_info in d["slots"].values():
+            if slot_info["status"] == "已服藥":
+                total_taken += 1
+            elif slot_info["status"] == "未準時":
+                total_late += 1
+            elif slot_info["status"] == "未服藥":
+                total_missed += 1
 
-        total_due = total_taken + total_late + total_missed
-        compliance_rate = round(((total_taken + total_late) / total_due * 100), 1) if total_due > 0 else 0.0
+    total_due = total_taken + total_late + total_missed
+    compliance_rate = round(((total_taken + total_late) / total_due * 100), 1) if total_due > 0 else 0.0
 
-        summary_box = {
-            "type": "box",
-            "layout": "vertical",
-            "backgroundColor": "#F3F4F6",
-            "cornerRadius": "8px",
-            "paddingAll": "12px",
-            "margin": "sm",
-            "contents": [
-                {"type": "text", "text": f"📊 {period_title}服藥統計總覽", "weight": "bold", "size": "sm", "color": "#1F2937"},
-                {"type": "text", "text": f"✅ 準時服藥：{total_taken} 次", "size": "xs", "color": "#059669", "margin": "xs"},
-                {"type": "text", "text": f"⚠️ 未準時服藥：{total_late} 次", "size": "xs", "color": "#D97706", "margin": "xs"},
-                {"type": "text", "text": f"❌ 未服藥（漏服）：{total_missed} 次", "size": "xs", "color": "#DC2626", "margin": "xs"},
-                {"type": "text", "text": f"🎯 整體服藥率：{compliance_rate}%", "weight": "bold", "size": "xs", "color": "#2563EB", "margin": "sm"}
-            ]
-        }
+    summary_box = {
+        "type": "box",
+        "layout": "vertical",
+        "backgroundColor": "#F3F4F6",
+        "cornerRadius": "8px",
+        "paddingAll": "12px",
+        "margin": "sm",
+        "contents": [
+            {"type": "text", "text": f"📊 {period_title}服藥統計總覽", "weight": "bold", "size": "sm", "color": "#1F2937"},
+            {"type": "text", "text": f"✅ 準時服藥：{total_taken} 次", "size": "xs", "color": "#059669", "margin": "xs"},
+            {"type": "text", "text": f"⚠️ 未準時服藥：{total_late} 次", "size": "xs", "color": "#D97706", "margin": "xs"},
+            {"type": "text", "text": f"❌ 未服藥（漏服）：{total_missed} 次", "size": "xs", "color": "#DC2626", "margin": "xs"},
+            {"type": "text", "text": f"🎯 整體服藥率：{compliance_rate}%", "weight": "bold", "size": "xs", "color": "#2563EB", "margin": "sm"}
+        ]
+    }
 
-    # 7日內完整顯示 7 天（拆成 4天 + 3天 兩張輪播卡片）；1/2個月顯示統計＋近 7 日明細
+    # 拆成 4天 + 3天 兩張輪播卡片，完整呈現近 7 日明細
     target_records = daily_records[:7]
     chunks = [target_records[:4], target_records[4:7]] if len(target_records) > 4 else [target_records]
 
     bubbles = []
     for idx, chunk in enumerate(chunks):
         body_contents = []
-        # 第一張卡片若為長天期查詢，最上方放入統計總覽框
-        if idx == 0 and summary_box:
+        # 第一張卡片最上方統一放入統計總覽框
+        if idx == 0:
             body_contents.append(summary_box)
             body_contents.append({
                 "type": "text",
@@ -416,7 +414,6 @@ def build_history_flex(daily_records, period_title, days_limit=7, lang="zh"):
         }
         bubbles.append(bubble_json)
 
-    # 若有多張卡片則回傳 Carousel 輪播，單張則回傳 Bubble
     if len(bubbles) > 1:
         container = {"type": "carousel", "contents": bubbles}
     else:
