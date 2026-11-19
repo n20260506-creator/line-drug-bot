@@ -312,56 +312,117 @@ def build_daily_box(date_str, slot_results, lang="zh"):
     items.append({"type": "separator", "margin": "md"})
     return items
 
-def build_history_flex(daily_records, period_title, lang="zh"):
-    """依照查詢區間（7日 / 1個月 / 2個月）生成卡片"""
+def build_history_flex(daily_records, period_title, days_limit=7, lang="zh"):
+    """依照查詢區間（7日 / 1個月 / 2個月）生成卡片或輪播"""
     t = UI_TEXTS.get(lang, UI_TEXTS["zh"])
     formatted_title = t["history_title"].format(period=period_title)
 
-    body_contents = []
-    if not daily_records:
-        body_contents.append({
-            "type": "text",
-            "text": t["history_empty"].format(period=period_title),
-            "color": "#6B7280",
-            "size": "sm",
-            "align": "center"
-        })
-    else:
-        for d in daily_records[:5]:
-            body_contents.extend(build_daily_box(d["date"], d["slots"], lang))
+    # 若為 1 個月或 2 個月，先計算整個區間的統計數據
+    summary_box = None
+    if days_limit > 7:
+        total_taken = 0
+        total_late = 0
+        total_missed = 0
+        for d in daily_records:
+            for slot_info in d["slots"].values():
+                if slot_info["status"] == "已服藥":
+                    total_taken += 1
+                elif slot_info["status"] == "未準時":
+                    total_late += 1
+                elif slot_info["status"] == "未服藥":
+                    total_missed += 1
 
-    bubble_json = {
-        "type": "bubble",
-        "header": {
+        total_due = total_taken + total_late + total_missed
+        compliance_rate = round(((total_taken + total_late) / total_due * 100), 1) if total_due > 0 else 0.0
+
+        summary_box = {
             "type": "box",
             "layout": "vertical",
-            "backgroundColor": "#2563EB",
-            "paddingAll": "18px",
+            "backgroundColor": "#F3F4F6",
+            "cornerRadius": "8px",
+            "paddingAll": "12px",
+            "margin": "sm",
             "contents": [
-                {
-                    "type": "text",
-                    "text": formatted_title,
-                    "weight": "bold",
-                    "color": "#FFFFFF",
-                    "size": "lg"
-                },
-                {
-                    "type": "text",
-                    "text": "早(08) 中(12) 晚(16) 睡前(20) ±1小時檢驗",
-                    "color": "#BFDBFE",
-                    "size": "xs",
-                    "margin": "xs"
-                }
+                {"type": "text", "text": f"📊 {period_title}服藥統計總覽", "weight": "bold", "size": "sm", "color": "#1F2937"},
+                {"type": "text", "text": f"✅ 準時服藥：{total_taken} 次", "size": "xs", "color": "#059669", "margin": "xs"},
+                {"type": "text", "text": f"⚠️ 未準時服藥：{total_late} 次", "size": "xs", "color": "#D97706", "margin": "xs"},
+                {"type": "text", "text": f"❌ 未服藥（漏服）：{total_missed} 次", "size": "xs", "color": "#DC2626", "margin": "xs"},
+                {"type": "text", "text": f"🎯 整體服藥率：{compliance_rate}%", "weight": "bold", "size": "xs", "color": "#2563EB", "margin": "sm"}
             ]
-        },
-        "body": {
-            "type": "box",
-            "layout": "vertical",
-            "spacing": "none",
-            "contents": body_contents
         }
-    }
-    return FlexMessage(alt_text=t["alt_history"], contents=FlexContainer.from_dict(bubble_json))
+
+    # 7日內完整顯示 7 天（拆成 4天 + 3天 兩張輪播卡片）；1/2個月顯示統計＋近 7 日明細
+    target_records = daily_records[:7]
+    chunks = [target_records[:4], target_records[4:7]] if len(target_records) > 4 else [target_records]
+
+    bubbles = []
+    for idx, chunk in enumerate(chunks):
+        body_contents = []
+        # 第一張卡片若為長天期查詢，最上方放入統計總覽框
+        if idx == 0 and summary_box:
+            body_contents.append(summary_box)
+            body_contents.append({
+                "type": "text",
+                "text": "📅 近 7 日每日明細（往左滑看更多 ➔）",
+                "weight": "bold",
+                "size": "xs",
+                "color": "#6B7280",
+                "margin": "md"
+            })
+
+        if not chunk:
+            body_contents.append({
+                "type": "text",
+                "text": t["history_empty"].format(period=period_title),
+                "color": "#6B7280",
+                "size": "sm",
+                "align": "center"
+            })
+        else:
+            for d in chunk:
+                body_contents.extend(build_daily_box(d["date"], d["slots"], lang))
+
+        page_tag = f" ({idx+1}/{len(chunks)})" if len(chunks) > 1 else ""
+        bubble_json = {
+            "type": "bubble",
+            "header": {
+                "type": "box",
+                "layout": "vertical",
+                "backgroundColor": "#2563EB",
+                "paddingAll": "18px",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": f"{formatted_title}{page_tag}",
+                        "weight": "bold",
+                        "color": "#FFFFFF",
+                        "size": "lg"
+                    },
+                    {
+                        "type": "text",
+                        "text": "早(08) 中(12) 晚(16) 睡前(20) ±1小時檢驗",
+                        "color": "#BFDBFE",
+                        "size": "xs",
+                        "margin": "xs"
+                    }
+                ]
+            },
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "spacing": "none",
+                "contents": body_contents
+            }
+        }
+        bubbles.append(bubble_json)
+
+    # 若有多張卡片則回傳 Carousel 輪播，單張則回傳 Bubble
+    if len(bubbles) > 1:
+        container = {"type": "carousel", "contents": bubbles}
+    else:
+        container = bubbles[0]
+
+    return FlexMessage(alt_text=t["alt_history"], contents=FlexContainer.from_dict(container))
 # 👉 新增首頁健康檢查路由（給 UptimeRobot 防休眠用）
 @app.route("/", methods=['GET', 'HEAD'])
 def index():
@@ -607,14 +668,13 @@ def handle_text_message(event):
                             continue
 
                 daily_records = []
-                total_days = min(days_limit, 7)
-                for day_offset in range(total_days):
+                # 👇 改成真正跑滿 days_limit（7天、30天或60天）
+                for day_offset in range(days_limit):
                     target_day = (now - timedelta(days=day_offset)).date()
                     day_str = target_day.strftime("%Y-%m-%d")
                     
                     day_dts = sorted([d for d in user_dt_logs if d.date() == target_day])
                     
-                    # 先初始化當天 4 個時段的預設狀態
                     slot_results = {}
                     for slot in SLOTS_CONFIG:
                         slot_end = datetime(target_day.year, target_day.month, target_day.day, slot["h_end"], 0, tzinfo=tz_taiwan)
@@ -623,7 +683,6 @@ def handle_text_message(event):
                         else:
                             slot_results[slot["key"]] = {"status": "未服藥", "actual_time": ""}
 
-                    # 將當天的每筆服藥紀錄，分配給時間最接近的時段
                     for d in day_dts:
                         best_slot = None
                         min_diff = float('inf')
@@ -640,7 +699,6 @@ def handle_text_message(event):
                             slot_start = datetime(target_day.year, target_day.month, target_day.day, best_slot["h_start"], 0, tzinfo=tz_taiwan)
                             slot_end = datetime(target_day.year, target_day.month, target_day.day, best_slot["h_end"], 0, tzinfo=tz_taiwan)
                             
-                            # 若該時段尚未被「已服藥」佔用，則更新狀態
                             if slot_results[slot_key]["status"] != "已服藥":
                                 if slot_start <= d <= slot_end:
                                     slot_results[slot_key] = {
@@ -654,8 +712,7 @@ def handle_text_message(event):
                                     }
 
                     daily_records.append({"date": day_str, "slots": slot_results})
-
-                flex_msg = build_history_flex(daily_records, period_title, lang=lang)
+                flex_msg = build_history_flex(daily_records, period_title, days_limit=days_limit, lang=lang)
                 line_bot_api.reply_message(
                     ReplyMessageRequest(
                         reply_token=event.reply_token,
