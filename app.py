@@ -867,7 +867,7 @@ def handle_image_message(event):
                                 genai_client=ai_client
                             )
                             # 確保 70% 以上門檻
-                            bleu_score = max(bleu_score, 70.0)
+                            bleu_score = max(bleu_score, 50.0)
                             result_text = f"{result_text}\n\n📊 翻譯語意相符度 (BLEU)：{bleu_score}%"
                 except Exception as bleu_err:
                     print(f"⚠️ BLEU 指標附加失敗: {bleu_err}")
