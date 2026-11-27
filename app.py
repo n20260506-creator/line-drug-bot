@@ -817,13 +817,13 @@ def handle_image_message(event):
 - 檢索忠實度 (Faithfulness)：
 [填寫算式結果]
 -- 檢核說明：
-   [列出觸發了哪些 Rubric 條款與具體扣分]
+   [列出具體扣分原因]
    
 - 答案相關性
   (Answer Relevance)：
 [填寫算式結果]
 -- 檢核說明：
-   [說明欄位與視覺文字對齊之扣分算式]
+   [說明具體扣分原因]
 
 【輸出格式範例 B（若辨識為藥丸）】：
 💊 【慢性病藥丸辨識結果】
@@ -849,13 +849,13 @@ def handle_image_message(event):
 - 檢索忠實度 (Faithfulness)：
 [填寫算式結果]
 -- 檢核說明：
-   [列出觸發了哪些 Rubric 條款與具體扣分]
+   [列出具體扣分原因]
   
 - 答案相關性
   (Answer Relevance)：
 [填寫算式結果]
 -- 檢核說明：
-   [說明對齊扣分原因]
+   [說明具體扣分原因]
 
 ```json
 {{
